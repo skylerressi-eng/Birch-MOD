@@ -8,87 +8,123 @@ import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.BirchTracker;
+import com.birchmod.tracking.TreeRegenTracker;
 
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
- * Renders the Birch Optimizer overlay: birch/hour, Bazaar price and
- * leaderboard rank.
+ * Renders the Birch Optimizer overlay.
+ *
+ * On Minecraft 26.1 the HUD is a render-state pipeline, so this implements
+ * {@link HudElement#extractRenderState} rather than an immediate-mode callback.
  */
-public class BirchHud {
+public class BirchHud implements HudElement {
 
     private static final DecimalFormat INT_FMT = new DecimalFormat("#,##0");
     private static final DecimalFormat PRICE_FMT = new DecimalFormat("#,##0.0");
+    private static final DecimalFormat SEC_FMT = new DecimalFormat("#0.0");
 
-    private static final int COLOR_TITLE = 0xFFD54F; // birch-yellow
-    private static final int COLOR_TEXT = 0xFFFFFF;
-    private static final int COLOR_MUTED = 0xAAAAAA;
+    // ARGB — 26.1 requires the alpha channel to be set explicitly.
+    private static final int COLOR_TITLE = 0xFFFFD54F; // birch yellow
+    private static final int COLOR_TEXT = 0xFFFFFFFF;
+    private static final int COLOR_GREEN = 0xFF55FF55;
+    private static final int COLOR_GOLD = 0xFFFFAA00;
+    private static final int COLOR_AQUA = 0xFF55FFFF;
+    private static final int COLOR_GREY = 0xFFAAAAAA;
 
     private final BirchTracker tracker;
+    private final TreeRegenTracker regenTracker;
     private final BazaarManager bazaar;
     private final LeaderboardManager leaderboard;
 
-    public BirchHud(BirchTracker tracker, BazaarManager bazaar, LeaderboardManager leaderboard) {
+    public BirchHud(BirchTracker tracker,
+                    TreeRegenTracker regenTracker,
+                    BazaarManager bazaar,
+                    LeaderboardManager leaderboard) {
         this.tracker = tracker;
+        this.regenTracker = regenTracker;
         this.bazaar = bazaar;
         this.leaderboard = leaderboard;
     }
 
-    @SubscribeEvent
-    public void onRenderOverlay(RenderGameOverlayEvent.Text event) {
-        if (!BirchConfig.hudEnabled) {
+    /** A single HUD row: text plus the colour it renders in. */
+    private record Line(String text, int color) {
+    }
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
+        BirchConfig config = BirchConfig.get();
+        if (!config.hudEnabled) {
             return;
         }
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.thePlayer == null || mc.gameSettings.showDebugInfo) {
+
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.options.hideGui) {
             return;
         }
 
-        List<String> lines = buildLines();
+        int x = config.hudX;
+        int y = config.hudY;
+        int lineHeight = client.font.lineHeight + 2;
 
-        int x = BirchConfig.hudX;
-        int y = BirchConfig.hudY;
-        int lineHeight = mc.fontRendererObj.FONT_HEIGHT + 2;
-
-        // Title first, then data lines.
-        mc.fontRendererObj.drawStringWithShadow("§lBirch Optimizer", x, y, COLOR_TITLE);
+        graphics.text(client.font, "Birch Optimizer", x, y, COLOR_TITLE, true);
         y += lineHeight;
-        for (String line : lines) {
-            mc.fontRendererObj.drawStringWithShadow(line, x, y, COLOR_TEXT);
+
+        for (Line line : buildLines(config)) {
+            graphics.text(client.font, line.text(), x, y, line.color(), true);
             y += lineHeight;
         }
     }
 
-    private List<String> buildLines() {
-        List<String> lines = new ArrayList<String>();
+    private List<Line> buildLines(BirchConfig config) {
+        List<Line> lines = new ArrayList<>();
 
-        // Birch / hour
+        // Birch per hour.
         double perHour = tracker.getBirchPerHour();
-        lines.add("Birch/hr: §a" + INT_FMT.format(perHour));
+        lines.add(new Line("Birch/hr: " + INT_FMT.format(perHour), COLOR_GREEN));
 
-        // Bazaar price
+        // Bazaar price and derived coin rate.
         if (bazaar.hasData()) {
-            String label = BirchConfig.showBuyPrice ? "Buy" : "Sell";
-            lines.add("BZ " + label + ": §6" + PRICE_FMT.format(bazaar.getDisplayPrice()) + " coins");
-
-            // Estimated coins/hour from the collected birch.
-            double coinsPerHour = perHour * bazaar.getDisplayPrice();
-            lines.add("Coins/hr: §6" + INT_FMT.format(coinsPerHour));
+            String label = config.showBuyPrice ? "Buy" : "Sell";
+            double price = bazaar.getDisplayPrice();
+            lines.add(new Line("BZ " + label + ": " + PRICE_FMT.format(price) + " coins", COLOR_GOLD));
+            lines.add(new Line("Coins/hr: " + INT_FMT.format(perHour * price), COLOR_GOLD));
         } else {
-            lines.add("BZ: §7loading...");
+            lines.add(new Line("BZ: loading...", COLOR_GREY));
         }
 
-        // Leaderboard rank
+        // Tree regeneration timer.
+        if (config.regenTimerEnabled) {
+            lines.add(regenLine());
+        }
+
+        // Leaderboard rank.
         if (leaderboard.hasRank()) {
             String title = leaderboard.getRankTitle();
-            String suffix = (title == null || title.isEmpty()) ? "" : " §7(" + title + ")";
-            lines.add("Rank: §b#" + INT_FMT.format(leaderboard.getRank()) + suffix);
+            String suffix = (title == null || title.isEmpty()) ? "" : " (" + title + ")";
+            lines.add(new Line("Rank: #" + INT_FMT.format(leaderboard.getRank()) + suffix, COLOR_AQUA));
         } else {
-            lines.add("Rank: §7" + leaderboard.getStatus());
+            lines.add(new Line("Rank: " + leaderboard.getStatus(), COLOR_GREY));
         }
 
         return lines;
+    }
+
+    private Line regenLine() {
+        double remaining = regenTracker.getSecondsUntilRegen();
+
+        if (remaining < 0.0) {
+            return new Line("Regen: chop a tree to start", COLOR_GREY);
+        }
+        if (remaining == 0.0) {
+            return new Line("Regen: READY", COLOR_GREEN);
+        }
+
+        // Mark the figure as an estimate until a real cycle has been measured.
+        String suffix = regenTracker.isCalibrated() ? "" : " (est)";
+        return new Line("Regen: " + SEC_FMT.format(remaining) + "s" + suffix, COLOR_GOLD);
     }
 }

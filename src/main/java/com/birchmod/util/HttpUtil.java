@@ -1,55 +1,48 @@
 package com.birchmod.util;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 
 /**
  * Minimal blocking HTTP GET helper. Always call from a background thread,
- * never from the Minecraft main/render thread.
+ * never from the Minecraft render thread.
  */
 public final class HttpUtil {
 
-    private static final int TIMEOUT_MS = 10_000;
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+
+    private static final HttpClient CLIENT = HttpClient.newBuilder()
+            .connectTimeout(TIMEOUT)
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
 
     private HttpUtil() {
     }
 
     /**
-     * Performs a GET request and returns the response body, or {@code null} on failure.
+     * Performs a GET request and returns the response body, or {@code null} on
+     * any failure or non-200 status.
      */
-    public static String get(String urlString) {
-        HttpURLConnection conn = null;
+    public static String get(String url) {
         try {
-            URL url = new URL(urlString);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(TIMEOUT_MS);
-            conn.setReadTimeout(TIMEOUT_MS);
-            conn.setRequestProperty("User-Agent", "BirchOptimizer/0.1.0");
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(TIMEOUT)
+                    .header("User-Agent", "BirchOptimizer/0.2.0")
+                    .GET()
+                    .build();
 
-            int code = conn.getResponseCode();
-            if (code != 200) {
-                return null;
-            }
-
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader in = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = in.readLine()) != null) {
-                    sb.append(line);
-                }
-            }
-            return sb.toString();
+            HttpResponse<String> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() == 200 ? response.body() : null;
+        } catch (InterruptedException e) {
+            // Restore the flag so the scheduler can shut the thread down.
+            Thread.currentThread().interrupt();
+            return null;
         } catch (Exception e) {
             return null;
-        } finally {
-            if (conn != null) {
-                conn.disconnect();
-            }
         }
     }
 }

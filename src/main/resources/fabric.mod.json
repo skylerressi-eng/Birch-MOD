@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "birchoptimizer",
+  "version": "${version}",
+  "name": "Birch Optimizer",
+  "description": "Hypixel Skyblock QOL mod: birch/hour, live Bazaar price, leaderboard rank and a tree regeneration timer.",
+  "authors": [
+    "skylerressi"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.birchmod.BirchMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "~${minecraft_version}",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

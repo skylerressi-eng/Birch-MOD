@@ -5,49 +5,54 @@ import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.hud.BirchHud;
 import com.birchmod.tracking.BirchTracker;
+import com.birchmod.tracking.TreeRegenTracker;
 
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.common.event.FMLInitializationEvent;
-import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
+import net.minecraft.resources.Identifier;
 
 /**
- * Birch Optimizer — main mod entry point.
+ * Birch Optimizer — Fabric client mod for Hypixel Skyblock on Minecraft 26.1.2.
  *
- * Features (v0.1):
- *  - Birch/hour: tracks birch logs collected and shows a live rate.
- *  - Bazaar price: live Birch Wood buy/sell price, refreshed every 10 minutes.
- *  - Leaderboard rank: your ranking, refreshed every 10 minutes.
+ * Features:
+ *  - Birch/hour, measured from inventory deltas (works on a remote server).
+ *  - Live Bazaar price of Birch Wood, refreshed every 10 minutes.
+ *  - Leaderboard rank, refreshed every 10 minutes.
+ *  - Tree regeneration timer that self-calibrates from observed regrowth.
  */
-@Mod(modid = BirchMod.MODID, name = BirchMod.NAME, version = BirchMod.VERSION, clientSideOnly = true)
-public class BirchMod {
+public class BirchMod implements ClientModInitializer {
 
-    public static final String MODID = "birchoptimizer";
-    public static final String NAME = "Birch Optimizer";
-    public static final String VERSION = "0.1.0";
+    public static final String MOD_ID = "birchoptimizer";
 
     public static BirchTracker tracker;
+    public static TreeRegenTracker regenTracker;
     public static BazaarManager bazaar;
     public static LeaderboardManager leaderboard;
-    public static BirchHud hud;
 
-    @Mod.EventHandler
-    public void preInit(FMLPreInitializationEvent event) {
-        BirchConfig.init(event.getSuggestedConfigurationFile());
-    }
+    @Override
+    public void onInitializeClient() {
+        BirchConfig.load();
 
-    @Mod.EventHandler
-    public void init(FMLInitializationEvent event) {
         tracker = new BirchTracker();
+        regenTracker = new TreeRegenTracker();
         bazaar = new BazaarManager();
         leaderboard = new LeaderboardManager();
-        hud = new BirchHud(tracker, bazaar, leaderboard);
 
-        MinecraftForge.EVENT_BUS.register(tracker);
-        MinecraftForge.EVENT_BUS.register(hud);
-
-        // Both API managers refresh on their own 10-minute schedule.
+        // Both API managers poll on their own 10-minute schedule.
         bazaar.start();
         leaderboard.start();
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            tracker.tick(client);
+            regenTracker.tick(client);
+        });
+
+        BirchHud hud = new BirchHud(tracker, regenTracker, bazaar, leaderboard);
+        HudElementRegistry.attachElementBefore(
+                VanillaHudElements.CHAT,
+                Identifier.fromNamespaceAndPath(MOD_ID, "birch_overlay"),
+                hud);
     }
 }

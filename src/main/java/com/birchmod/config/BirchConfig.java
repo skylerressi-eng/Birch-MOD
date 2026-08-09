@@ -1,65 +1,87 @@
 package com.birchmod.config;
 
-import java.io.File;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
-import net.minecraftforge.common.config.Configuration;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
+import net.fabricmc.loader.api.FabricLoader;
 
 /**
- * Simple persisted configuration for Birch Optimizer.
+ * JSON-backed configuration, stored at {@code config/birchoptimizer.json}.
  *
- * The Hypixel API key + player name are used by {@link com.birchmod.api.LeaderboardManager}
- * to look up your ranking. If left blank, the leaderboard line shows "N/A".
+ * Forge's Configuration class does not exist on Fabric, so this is a plain
+ * Gson-serialized holder written on demand.
  */
 public final class BirchConfig {
 
-    private static Configuration config;
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String FILE_NAME = "birchoptimizer.json";
 
-    // HUD position (top-left origin, in GUI-scaled pixels).
-    public static int hudX = 5;
-    public static int hudY = 5;
-    public static boolean hudEnabled = true;
+    // ---- HUD ----
+    public boolean hudEnabled = true;
+    public int hudX = 5;
+    public int hudY = 5;
 
-    // Which Bazaar price to show: BUY (insta-buy) or SELL (insta-sell).
-    public static boolean showBuyPrice = true;
+    // ---- Bazaar ----
+    /** Show insta-buy price (true) or insta-sell price (false). */
+    public boolean showBuyPrice = true;
+    /** Hypixel Bazaar product id. "BIRCH_LOG" is Birch Wood. */
+    public String bazaarProductId = "BIRCH_LOG";
 
-    // Leaderboard lookup credentials.
-    public static String hypixelApiKey = "";
-    public static String playerName = "";
+    // ---- Leaderboard ----
+    public String hypixelApiKey = "";
+    public String playerName = "";
 
-    // The Bazaar product id we track. "BIRCH_LOG" is Birch Wood in Skyblock.
-    public static String bazaarProductId = "BIRCH_LOG";
+    // ---- Tree regen timer ----
+    public boolean regenTimerEnabled = true;
+    /**
+     * Fallback regen duration in seconds, used until the mod has measured a
+     * real regrowth cycle. Once it observes one, the measured value wins.
+     */
+    public double defaultRegenSeconds = 60.0;
 
-    private BirchConfig() {
+    private static BirchConfig instance = new BirchConfig();
+
+    public static BirchConfig get() {
+        return instance;
     }
 
-    public static void init(File file) {
-        config = new Configuration(file);
-        load();
+    private static Path path() {
+        return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
     }
 
     public static void load() {
-        config.load();
-
-        hudEnabled = config.getBoolean("hudEnabled", "hud", true, "Show the Birch Optimizer HUD overlay.");
-        hudX = config.getInt("hudX", "hud", 5, 0, 10000, "HUD X position (pixels from left).");
-        hudY = config.getInt("hudY", "hud", 5, 0, 10000, "HUD Y position (pixels from top).");
-
-        showBuyPrice = config.getBoolean("showBuyPrice", "bazaar", true,
-                "Show insta-buy price (true) or insta-sell price (false).");
-        bazaarProductId = config.getString("bazaarProductId", "bazaar", "BIRCH_LOG",
-                "Hypixel Bazaar product id to track.");
-
-        hypixelApiKey = config.getString("hypixelApiKey", "leaderboard", "",
-                "Hypixel API key (run /api new in-game). Required for leaderboard rank.");
-        playerName = config.getString("playerName", "leaderboard", "",
-                "Your Minecraft username, used for leaderboard rank lookup.");
-
+        Path file = path();
+        try {
+            if (Files.exists(file)) {
+                try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    BirchConfig loaded = GSON.fromJson(reader, BirchConfig.class);
+                    if (loaded != null) {
+                        instance = loaded;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Corrupt or unreadable config: keep defaults rather than crashing.
+            instance = new BirchConfig();
+        }
         save();
     }
 
     public static void save() {
-        if (config != null && config.hasChanged()) {
-            config.save();
+        Path file = path();
+        try {
+            Files.createDirectories(file.getParent());
+            try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+                GSON.toJson(instance, writer);
+            }
+        } catch (Exception ignored) {
+            // Non-fatal: the mod still runs with in-memory settings.
         }
     }
 }

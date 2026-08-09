@@ -4,99 +4,107 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.init.Blocks;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
- * Tracks how many birch logs the player picks up and derives a birch/hour rate.
+ * Tracks birch collected per hour.
  *
- * Detection: we watch item-pickup events for Birch Wood (minecraft:log meta 2,
- * which is what Skyblock's "Birch Wood" item is), plus any item whose display
- * name contains "Birch".
+ * Detection works by sampling the player's inventory a few times a second and
+ * recording increases in the birch count. This is deliberate: Fabric's block
+ * break / pickup events are server-authoritative, so on a remote server like
+ * Hypixel they never fire client-side. Inventory deltas always work.
  *
- * Rate: a rolling 1-hour window. Before an hour of play has elapsed the rate is
- * extrapolated from the time played this session.
+ * Only increases are counted; selling, dropping or stashing birch decreases the
+ * count and is ignored, so the rate reflects gathering only.
  */
 public class BirchTracker {
 
     private static final long WINDOW_MS = 60L * 60L * 1000L; // 1 hour
+    private static final int SAMPLE_INTERVAL_TICKS = 5;      // 4x per second
 
-    private static final class Pickup {
-        final long time;
-        final int amount;
-
-        Pickup(long time, int amount) {
-            this.time = time;
-            this.amount = amount;
-        }
+    private record Sample(long time, int amount) {
     }
 
-    private final Deque<Pickup> pickups = new ArrayDeque<Pickup>();
+    private final Deque<Sample> samples = new ArrayDeque<>();
     private long sessionStart = System.currentTimeMillis();
     private long totalCollected = 0L;
 
-    @SubscribeEvent
-    public void onItemPickup(EntityItemPickupEvent event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.thePlayer == null) {
-            return;
-        }
-        // Only count the local player's pickups.
-        if (event.entityPlayer != mc.thePlayer) {
-            return;
-        }
-        if (event.item == null) {
+    private int lastInventoryCount = -1;
+    private int tickCounter = 0;
+
+    public void tick(Minecraft client) {
+        if (client == null || client.player == null) {
+            // Left the world: force a re-baseline on the next join so the
+            // whole inventory is not counted as a single huge gain.
+            lastInventoryCount = -1;
             return;
         }
 
-        ItemStack stack = event.item.getEntityItem();
-        if (stack == null || !isBirch(stack)) {
+        if (++tickCounter < SAMPLE_INTERVAL_TICKS) {
+            return;
+        }
+        tickCounter = 0;
+
+        int current = countBirch(client.player);
+
+        if (lastInventoryCount < 0) {
+            lastInventoryCount = current;
             return;
         }
 
-        int amount = stack.stackSize;
-        long now = System.currentTimeMillis();
-        pickups.addLast(new Pickup(now, amount));
-        totalCollected += amount;
-        purgeOld(now);
+        int delta = current - lastInventoryCount;
+        lastInventoryCount = current;
+
+        if (delta > 0) {
+            long now = System.currentTimeMillis();
+            samples.addLast(new Sample(now, delta));
+            totalCollected += delta;
+            purgeOld(now);
+        }
+    }
+
+    private int countBirch(LocalPlayer player) {
+        Inventory inventory = player.getInventory();
+        int total = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && isBirch(stack)) {
+                total += stack.getCount();
+            }
+        }
+        return total;
     }
 
     private boolean isBirch(ItemStack stack) {
-        Item birchLog = Item.getItemFromBlock(Blocks.log);
-        if (stack.getItem() == birchLog && stack.getMetadata() == 2) {
+        if (stack.is(Items.BIRCH_LOG) || stack.is(Items.BIRCH_WOOD)) {
             return true;
         }
-        // Fallback: match by (stripped) display name for custom Skyblock items.
+        // Skyblock reskins vanilla items, so fall back to the display name.
         try {
-            String name = stack.getDisplayName();
-            if (name != null) {
-                String clean = name.replaceAll("(?i)\\u00a7[0-9A-FK-OR]", "").toLowerCase();
-                return clean.contains("birch");
-            }
+            String name = stack.getHoverName().getString();
+            return name != null && name.toLowerCase().contains("birch");
         } catch (Exception ignored) {
+            return false;
         }
-        return false;
     }
 
     private void purgeOld(long now) {
-        while (!pickups.isEmpty() && (now - pickups.peekFirst().time) > WINDOW_MS) {
-            pickups.pollFirst();
+        while (!samples.isEmpty() && (now - samples.peekFirst().time()) > WINDOW_MS) {
+            samples.pollFirst();
         }
     }
 
-    /**
-     * @return birch collected per hour, based on the rolling window.
-     */
+    /** @return birch collected per hour over the rolling window. */
     public double getBirchPerHour() {
         long now = System.currentTimeMillis();
         purgeOld(now);
 
         long total = 0L;
-        for (Pickup p : pickups) {
-            total += p.amount;
+        for (Sample s : samples) {
+            total += s.amount();
         }
         if (total == 0L) {
             return 0.0;
@@ -113,10 +121,10 @@ public class BirchTracker {
         return totalCollected;
     }
 
-    /** Reset the session counters. */
     public void reset() {
-        pickups.clear();
+        samples.clear();
         totalCollected = 0L;
         sessionStart = System.currentTimeMillis();
+        lastInventoryCount = -1;
     }
 }

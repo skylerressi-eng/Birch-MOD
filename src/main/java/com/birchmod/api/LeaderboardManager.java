@@ -3,7 +3,6 @@ package com.birchmod.api;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import com.birchmod.config.BirchConfig;
@@ -16,12 +15,12 @@ import com.google.gson.JsonParser;
 /**
  * Looks up the player's leaderboard ranking every 10 minutes.
  *
- * Hypixel does not expose a single "birch" leaderboard, so v1 resolves the
+ * Hypixel exposes no dedicated "birch" leaderboard, so this resolves the
  * player's UUID and scans the public leaderboards, reporting the best (lowest)
- * position it finds. Once the exact board to track is decided, point
- * {@link #refresh()} at that specific source instead.
+ * position found. Point {@link #refresh()} at a specific board once the exact
+ * ranking to track is decided.
  *
- * Requires a Hypixel API key and the player's username (see config).
+ * Requires a Hypixel API key and username in the config.
  */
 public class LeaderboardManager {
 
@@ -29,37 +28,31 @@ public class LeaderboardManager {
     private static final String LEADERBOARDS_URL = "https://api.hypixel.net/leaderboards?key=";
     private static final long REFRESH_MINUTES = 10L;
 
-    private volatile int rank = -1;            // best position found (1-based); -1 = unknown
-    private volatile String rankTitle = "";    // which leaderboard that rank is on
+    private volatile int rank = -1;
+    private volatile String rankTitle = "";
     private volatile String status = "not configured";
     private volatile long lastUpdate = 0L;
 
     private volatile String cachedUuid = null;
     private volatile String cachedName = null;
 
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
-        @Override
-        public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, "BirchOptimizer-Leaderboard");
-            t.setDaemon(true);
-            return t;
-        }
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "BirchOptimizer-Leaderboard");
+        t.setDaemon(true);
+        return t;
     });
 
     public void start() {
-        scheduler.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                refresh();
-            }
-        }, 0L, REFRESH_MINUTES, TimeUnit.MINUTES);
+        scheduler.scheduleAtFixedRate(this::refresh, 0L, REFRESH_MINUTES, TimeUnit.MINUTES);
     }
 
     private void refresh() {
         try {
-            String apiKey = BirchConfig.hypixelApiKey;
-            String name = BirchConfig.playerName;
-            if (apiKey == null || apiKey.trim().isEmpty() || name == null || name.trim().isEmpty()) {
+            BirchConfig config = BirchConfig.get();
+            String apiKey = config.hypixelApiKey;
+            String name = config.playerName;
+
+            if (apiKey == null || apiKey.isBlank() || name == null || name.isBlank()) {
                 status = "set API key + name";
                 return;
             }
@@ -75,7 +68,7 @@ public class LeaderboardManager {
                 status = "api error";
                 return;
             }
-            JsonObject root = new JsonParser().parse(body).getAsJsonObject();
+            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             if (!root.has("success") || !root.get("success").getAsBoolean()) {
                 status = "api error";
                 return;
@@ -96,8 +89,7 @@ public class LeaderboardManager {
                     }
                     JsonArray leaders = board.getAsJsonArray("leaders");
                     for (int i = 0; i < leaders.size(); i++) {
-                        String leaderUuid = normalize(leaders.get(i).getAsString());
-                        if (leaderUuid.equals(uuid)) {
+                        if (normalize(leaders.get(i).getAsString()).equals(uuid)) {
                             if (i + 1 < bestRank) {
                                 bestRank = i + 1;
                                 bestTitle = titleOf(board, game.getKey());
@@ -142,7 +134,7 @@ public class LeaderboardManager {
             return null;
         }
         try {
-            JsonObject obj = new JsonParser().parse(body).getAsJsonObject();
+            JsonObject obj = JsonParser.parseString(body).getAsJsonObject();
             if (obj.has("id")) {
                 cachedUuid = normalize(obj.get("id").getAsString());
                 cachedName = name;
