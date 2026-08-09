@@ -36,6 +36,8 @@ In the world, every downed tree carries its own countdown:
 | **Session & lifetime stats** | Persisted across restarts |
 | **Collection rank** | Captured when you open a collection leaderboard |
 | **Skyblock detection** | Overlay stays hidden everywhere else |
+| **Route planning** | Orders trees by fastest payoff, not just distance |
+| **Tracers & highlights** | Green box on each tree's centre, lines pointing to it |
 
 ## Automatic tracking
 
@@ -53,6 +55,41 @@ Hypixel's real rate. `/timer` reports mean, fastest, slowest and sample count.
 Until the first cycle completes, the HUD marks the figure `(est)`.
 
 Config flags only ever affect **display** — measurement always runs.
+
+## Route planning
+
+Built for a grove like **the Park**, where trees regrow on a clock and the
+optimal loop is a cycle rather than a straight line.
+
+The route is a greedy nearest-first walk, but "nearest" is measured in **time,
+not distance**. For each candidate tree the cost is:
+
+```
+max(travel time to the tree, its remaining regen)
+```
+
+You gain nothing by arriving early, so a tree two seconds further away that is
+**ready now** beats a closer tree with twenty seconds left on its clock. That
+one rule makes the route degrade gracefully in both directions: when everything
+is standing it becomes plain "nearest tree", and when everything is chopped it
+becomes "whichever comes back soonest".
+
+### Tracers and highlights
+
+Each routed tree gets a **wireframe box around its centre block** — the trunk
+middle, not its feet, so the marker sits inside the tree. Tracers **ping off
+that same block**, so line and marker always agree on where the tree is.
+
+| Colour | Meaning |
+|--------|---------|
+| **Green** | Next stop, ready to chop now |
+| **Amber** | Next stop, still regrowing |
+| **Blue** | Later stops, chained in order |
+
+The first tracer runs from just below your eye level to the next tree; chained
+tracers then hop centre-block to centre-block through the rest of the route.
+Tune the centre height with `/route center <0-12>` if Park birches sit taller
+or shorter than expected.
 
 ## Commands
 
@@ -80,6 +117,16 @@ Config flags only ever affect **display** — measurement always runs.
 | `/timer` | Full regen statistics |
 | `/timer mode` | Toggle floating in-world labels |
 | `/timer reset` | Clear tracked trees and measurements |
+
+### `/route`
+| Command | Effect |
+|---------|--------|
+| `/route` | List the planned route with ETAs |
+| `/route <true\|false>` | Toggle the route overlay |
+| `/route tracers <true\|false>` | Toggle tracer lines |
+| `/route chain <true\|false>` | Toggle chained tracers |
+| `/route length <1-16>` | How many stops to plan ahead |
+| `/route center <0-12>` | Blocks above base treated as tree centre |
 
 ### Keybinds
 Rebindable under Controls → Birch Optimizer.
@@ -163,6 +210,7 @@ Confirmed against the real 26.1.2 / Fabric API 0.155.2 jars:
 | World render | `LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES` (was `WorldRenderEvents`) |
 | Text (screen) | `GuiGraphicsExtractor.text(font, s, x, y, argb, shadow)` |
 | Text (world) | `Font.drawInBatch(..., Font.DisplayMode.SEE_THROUGH, ...)` |
+| Lines | `RenderTypes.lines()` (moved to `renderer.rendertype`) |
 | Commands | `ClientCommandRegistrationCallback` + `ClientCommands.literal` |
 | Keybinds | `KeyMappingHelper` + `KeyMapping.Category.register` |
 | Chat | `Gui.getChat().addClientSystemMessage` |
@@ -176,11 +224,14 @@ src/main/java/com/birchmod/
 ├── api/BazaarManager.java              # tax-aware multi-product pricing
 ├── api/LeaderboardManager.java         # leaderboard rank (10-min poll)
 ├── command/BirchCommand.java           # /birch …
+├── command/RouteCommand.java           # /route …
 ├── command/TimerCommand.java           # /timer …
 ├── config/BirchConfig.java             # JSON config, clamped on load
 ├── hud/BirchHud.java                   # overlay (26.1 render-state pipeline)
 ├── input/Keybinds.java                 # rebindable shortcuts
+├── render/TracerRenderer.java          # tracers + green centre highlights
 ├── render/TreeTimerRenderer.java       # floating in-world countdowns
+├── route/RouteBuilder.java             # time-cost route planner
 ├── stats/SessionStats.java             # session + persisted lifetime stats
 ├── tracking/BirchTracker.java          # birch/hour via inventory deltas
 ├── tracking/TreeRegenTracker.java      # automatic per-tree regen timing

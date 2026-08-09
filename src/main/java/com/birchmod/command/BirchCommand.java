@@ -274,6 +274,10 @@ public final class BirchCommand {
         feedback(source, "§f/birch skyblockonly <true|false> §7— hide outside Skyblock");
         feedback(source, "§f/birch apikey <key> §7· §f/birch name <username>");
         feedback(source, "§f/timer mode §7— toggle floating tree timers");
+        feedback(source, "§f/route §7— show the planned route");
+        feedback(source, "§f/route <true|false> §7— toggle route overlay");
+        feedback(source, "§f/route tracers <true|false> §7· §f/route chain <true|false>");
+        feedback(source, "§f/route length <1-16> §7· §f/route center <0-12>");
     }
 
     private static void header(FabricClientCommandSource source) {

@@ -322,6 +322,11 @@ public class TreeRegenTracker {
         return trees.size();
     }
 
+    /** Every tracked tree, standing or regrowing — the route planner's input. */
+    public List<Tree> getAllTrees() {
+        return new ArrayList<>(trees.values());
+    }
+
     /** Soonest regen across all downed trees, or -1 if none are pending. */
     public double getSoonestRegen() {
         double soonest = -1.0;

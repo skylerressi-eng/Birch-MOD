@@ -7,6 +7,7 @@ import java.util.List;
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
+import com.birchmod.route.RouteBuilder;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
@@ -17,6 +18,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Renders the Birch Optimizer overlay.
@@ -46,17 +48,20 @@ public class BirchHud implements HudElement {
     private final CollectionRankTracker collectionRank;
     private final BazaarManager bazaar;
     private final LeaderboardManager leaderboard;
+    private final RouteBuilder routeBuilder;
 
     public BirchHud(BirchTracker tracker,
                     TreeRegenTracker regenTracker,
                     CollectionRankTracker collectionRank,
                     BazaarManager bazaar,
-                    LeaderboardManager leaderboard) {
+                    LeaderboardManager leaderboard,
+                    RouteBuilder routeBuilder) {
         this.tracker = tracker;
         this.regenTracker = regenTracker;
         this.collectionRank = collectionRank;
         this.bazaar = bazaar;
         this.leaderboard = leaderboard;
+        this.routeBuilder = routeBuilder;
     }
 
     /** A single HUD row: text plus the colour it renders in. */
@@ -143,6 +148,10 @@ public class BirchHud implements HudElement {
             lines.add(regenLine());
         }
 
+        if (config.showRoute && config.routeEnabled) {
+            lines.add(routeLine());
+        }
+
         if (config.showSession) {
             lines.add(new Line("Session: " + INT_FMT.format(SessionStats.getSessionBirch())
                     + " birch / " + INT_FMT.format(SessionStats.getSessionTrees()) + " trees", COLOR_WHITE));
@@ -167,6 +176,25 @@ public class BirchHud implements HudElement {
         }
 
         return lines;
+    }
+
+    /** Distance and wait for the next stop on the planned route. */
+    private Line routeLine() {
+        RouteBuilder.Stop next = routeBuilder.getNext();
+        if (next == null) {
+            return new Line("Route: no trees in range", COLOR_GREY);
+        }
+
+        Minecraft client = Minecraft.getInstance();
+        double distance = client != null && client.player != null
+                ? client.player.position().distanceTo(Vec3.atCenterOf(next.center()))
+                : 0.0;
+
+        if (next.etaSeconds() > 0.01) {
+            return new Line("Route: " + INT_FMT.format(distance) + "m, wait "
+                    + SEC_FMT.format(next.etaSeconds()) + "s", COLOR_GOLD);
+        }
+        return new Line("Route: " + INT_FMT.format(distance) + "m, ready", COLOR_GREEN);
     }
 
     private Line regenLine() {

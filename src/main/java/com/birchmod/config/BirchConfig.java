@@ -35,6 +35,7 @@ public final class BirchConfig {
     public boolean showBazaar = true;
     public boolean showCoinRate = true;
     public boolean showRegen = true;
+    public boolean showRoute = true;
     public boolean showSession = true;
     public boolean showCollectionRank = true;
     public boolean showLeaderboard = true;
@@ -60,6 +61,18 @@ public final class BirchConfig {
     public double defaultRegenSeconds = 60.0;
     /** Hide in-world timers beyond this distance, in blocks. */
     public double worldTimerRange = 48.0;
+
+    // ---- Route planning ----
+    /** Draw the planned route: green highlight on each tree's centre block. */
+    public boolean routeEnabled = true;
+    /** Draw tracer lines to the route. */
+    public boolean tracersEnabled = true;
+    /** Chain tracers between successive stops, not just to the next one. */
+    public boolean chainTracers = true;
+    /** How many stops to plan ahead. */
+    public int routeLength = 5;
+    /** Blocks above the trunk base to treat as the tree's centre. */
+    public int treeCenterHeight = 2;
 
     // ---- Notifications ----
     public boolean notifyOnReady = true;
@@ -110,6 +123,8 @@ public final class BirchConfig {
         bazaarTaxRate = Math.max(0.0, Math.min(0.25, bazaarTaxRate));
         hudX = Math.max(0, hudX);
         hudY = Math.max(0, hudY);
+        routeLength = Math.max(1, Math.min(16, routeLength));
+        treeCenterHeight = Math.max(0, Math.min(12, treeCenterHeight));
         if (bazaarProductId == null || bazaarProductId.isBlank()) {
             bazaarProductId = "BIRCH_LOG";
         }

@@ -3,11 +3,14 @@ package com.birchmod;
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.command.BirchCommand;
+import com.birchmod.command.RouteCommand;
 import com.birchmod.command.TimerCommand;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.hud.BirchHud;
 import com.birchmod.input.Keybinds;
+import com.birchmod.render.TracerRenderer;
 import com.birchmod.render.TreeTimerRenderer;
+import com.birchmod.route.RouteBuilder;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
@@ -42,6 +45,7 @@ public class BirchMod implements ClientModInitializer {
     public static CollectionRankTracker collectionRank;
     public static BazaarManager bazaar;
     public static LeaderboardManager leaderboard;
+    public static RouteBuilder routeBuilder;
 
     @Override
     public void onInitializeClient() {
@@ -53,6 +57,7 @@ public class BirchMod implements ClientModInitializer {
         collectionRank = new CollectionRankTracker();
         bazaar = new BazaarManager();
         leaderboard = new LeaderboardManager();
+        routeBuilder = new RouteBuilder(regenTracker);
 
         // Both API managers poll on their own 10-minute schedule.
         bazaar.start();
@@ -65,13 +70,16 @@ public class BirchMod implements ClientModInitializer {
             tracker.tick(client);
             regenTracker.tick(client);
             collectionRank.tick(client);
+            if (client.player != null) {
+                routeBuilder.update(client.player.position());
+            }
             Keybinds.tick(client, BirchMod::resetSession);
         });
 
         // Persist lifetime totals on a clean exit.
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> SessionStats.save());
 
-        BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, leaderboard);
+        BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, leaderboard, routeBuilder);
         HudElementRegistry.attachElementBefore(
                 VanillaHudElements.CHAT,
                 Identifier.fromNamespaceAndPath(MOD_ID, "birch_overlay"),
@@ -80,8 +88,12 @@ public class BirchMod implements ClientModInitializer {
         TreeTimerRenderer treeTimers = new TreeTimerRenderer(regenTracker);
         LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(treeTimers::render);
 
+        TracerRenderer tracers = new TracerRenderer(routeBuilder);
+        LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(tracers::render);
+
         TimerCommand.register(regenTracker);
         BirchCommand.register(tracker, regenTracker, collectionRank, bazaar, leaderboard);
+        RouteCommand.register(routeBuilder);
     }
 
     /** Clear all session-scoped counters. Shared by the keybind and command. */
