@@ -1,0 +1,15 @@
+[
+{
+  "modid": "birchoptimizer",
+  "name": "Birch Optimizer",
+  "description": "Hypixel Skyblock QOL mod that tracks birch/hour, live Bazaar price of Birch Wood, and your leaderboard ranking.",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "authorList": ["skylerressi"],
+  "credits": "Birch Optimizer",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]

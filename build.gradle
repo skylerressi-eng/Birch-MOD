@@ -1,0 +1,59 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        maven { url = "https://maven.minecraftforge.net" }
+        maven { url = "https://repo.spongepowered.org/repository/maven-public/" }
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'
+        classpath 'org.spongepowered:mixingradle:0.6-SNAPSHOT'
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle.forge'
+
+// ---------------------------------------------------------------------------
+// Birch Optimizer — a Hypixel Skyblock QOL mod for Minecraft 1.8.9 (Forge).
+//
+// NOTE: Building a 1.8.9 Forge mod requires a Java 8 JDK. This project will
+// NOT compile under Java 17/21. Use `JAVA_HOME=<jdk8> ./gradlew build`.
+// ---------------------------------------------------------------------------
+
+version = "0.1.0"
+group = "com.birchmod"
+archivesBaseName = "BirchOptimizer"
+
+sourceCompatibility = targetCompatibility = '1.8'
+compileJava {
+    sourceCompatibility = targetCompatibility = '1.8'
+}
+
+minecraft {
+    version = "1.8.9-11.15.1.2318-1.8.9"
+    runDir = "run"
+    mappings = "stable_22"
+    makeObfSourceJar = false
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Minecraft 1.8.9 ships Gson (com.google.gson) on the classpath already,
+    // so we do not need to bundle any HTTP/JSON libraries.
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "mcversion", project.minecraft.version
+
+    from(sourceSets.main.resources.srcDirs) {
+        include 'mcmod.info'
+        expand 'version': project.version, 'mcversion': project.minecraft.version
+    }
+
+    from(sourceSets.main.resources.srcDirs) {
+        exclude 'mcmod.info'
+    }
+}

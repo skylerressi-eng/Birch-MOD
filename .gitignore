@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+out/
+run/
+
+# ForgeGradle
+eclipse/
+.settings/
+.metadata/
+*.launch
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
