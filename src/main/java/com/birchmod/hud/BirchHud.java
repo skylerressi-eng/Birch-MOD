@@ -8,6 +8,7 @@ import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.BirchTracker;
+import com.birchmod.tracking.CollectionRankTracker;
 import com.birchmod.tracking.TreeRegenTracker;
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
@@ -37,15 +38,18 @@ public class BirchHud implements HudElement {
 
     private final BirchTracker tracker;
     private final TreeRegenTracker regenTracker;
+    private final CollectionRankTracker collectionRank;
     private final BazaarManager bazaar;
     private final LeaderboardManager leaderboard;
 
     public BirchHud(BirchTracker tracker,
                     TreeRegenTracker regenTracker,
+                    CollectionRankTracker collectionRank,
                     BazaarManager bazaar,
                     LeaderboardManager leaderboard) {
         this.tracker = tracker;
         this.regenTracker = regenTracker;
+        this.collectionRank = collectionRank;
         this.bazaar = bazaar;
         this.leaderboard = leaderboard;
     }
@@ -101,6 +105,13 @@ public class BirchHud implements HudElement {
             lines.add(regenLine());
         }
 
+        // Collection leaderboard rank, noted when you open the leaderboard GUI.
+        if (collectionRank.hasRank()) {
+            String name = collectionRank.getCollectionName();
+            String suffix = (name == null || name.isEmpty()) ? "" : " (" + name + ")";
+            lines.add(new Line("Collection: #" + INT_FMT.format(collectionRank.getRank()) + suffix, COLOR_AQUA));
+        }
+
         // Leaderboard rank.
         if (leaderboard.hasRank()) {
             String title = leaderboard.getRankTitle();
@@ -114,17 +125,21 @@ public class BirchHud implements HudElement {
     }
 
     private Line regenLine() {
-        double remaining = regenTracker.getSecondsUntilRegen();
+        double remaining = regenTracker.getSoonestRegen();
 
         if (remaining < 0.0) {
-            return new Line("Regen: chop a tree to start", COLOR_GREY);
+            return new Line("Regen: fully chop a tree to start", COLOR_GREY);
         }
+
+        int pending = regenTracker.getDownedTrees().size();
+        String count = pending > 1 ? " (" + pending + " trees)" : "";
+
         if (remaining == 0.0) {
-            return new Line("Regen: READY", COLOR_GREEN);
+            return new Line("Regen: READY" + count, COLOR_GREEN);
         }
 
         // Mark the figure as an estimate until a real cycle has been measured.
         String suffix = regenTracker.isCalibrated() ? "" : " (est)";
-        return new Line("Regen: " + SEC_FMT.format(remaining) + "s" + suffix, COLOR_GOLD);
+        return new Line("Regen: " + SEC_FMT.format(remaining) + "s" + suffix + count, COLOR_GOLD);
     }
 }

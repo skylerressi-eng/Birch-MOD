@@ -39,6 +39,8 @@ public final class BirchConfig {
 
     // ---- Tree regen timer ----
     public boolean regenTimerEnabled = true;
+    /** Floating in-world timers above downed trees. Toggled by {@code /timer mode}. */
+    public boolean worldTimersEnabled = true;
     /**
      * Fallback regen duration in seconds, used until the mod has measured a
      * real regrowth cycle. Once it observes one, the measured value wins.
