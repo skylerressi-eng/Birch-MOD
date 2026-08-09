@@ -7,9 +7,11 @@ import java.util.List;
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
+import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
 import com.birchmod.tracking.TreeRegenTracker;
+import com.birchmod.util.SkyblockDetector;
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
@@ -30,11 +32,14 @@ public class BirchHud implements HudElement {
 
     // ARGB — 26.1 requires the alpha channel to be set explicitly.
     private static final int COLOR_TITLE = 0xFFFFD54F; // birch yellow
-    private static final int COLOR_TEXT = 0xFFFFFFFF;
     private static final int COLOR_GREEN = 0xFF55FF55;
     private static final int COLOR_GOLD = 0xFFFFAA00;
     private static final int COLOR_AQUA = 0xFF55FFFF;
     private static final int COLOR_GREY = 0xFFAAAAAA;
+    private static final int COLOR_WHITE = 0xFFFFFFFF;
+    private static final int COLOR_BACKDROP = 0x90000000;
+
+    private static final int PADDING = 3;
 
     private final BirchTracker tracker;
     private final TreeRegenTracker regenTracker;
@@ -69,56 +74,96 @@ public class BirchHud implements HudElement {
         if (client == null || client.player == null || client.options.hideGui) {
             return;
         }
+        if (!SkyblockDetector.shouldRender(config.onlyInSkyblock)) {
+            return;
+        }
 
-        int x = config.hudX;
-        int y = config.hudY;
+        List<Line> lines = buildLines(config);
+        if (lines.isEmpty()) {
+            return;
+        }
+
         int lineHeight = client.font.lineHeight + 2;
+        float scale = (float) config.hudScale;
 
-        graphics.text(client.font, "Birch Optimizer", x, y, COLOR_TITLE, true);
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(config.hudX, config.hudY);
+        if (scale != 1.0f) {
+            graphics.pose().scale(scale, scale);
+        }
+
+        if (config.hudBackground) {
+            int width = 0;
+            for (Line line : lines) {
+                width = Math.max(width, client.font.width(line.text()));
+            }
+            width = Math.max(width, client.font.width("Birch Optimizer"));
+            int height = lineHeight * (lines.size() + 1);
+            graphics.fill(-PADDING, -PADDING, width + PADDING, height + PADDING, COLOR_BACKDROP);
+        }
+
+        int y = 0;
+        graphics.text(client.font, "Birch Optimizer", 0, y, COLOR_TITLE, true);
         y += lineHeight;
 
-        for (Line line : buildLines(config)) {
-            graphics.text(client.font, line.text(), x, y, line.color(), true);
+        for (Line line : lines) {
+            graphics.text(client.font, line.text(), 0, y, line.color(), true);
             y += lineHeight;
         }
+
+        graphics.pose().popMatrix();
     }
 
     private List<Line> buildLines(BirchConfig config) {
         List<Line> lines = new ArrayList<>();
 
-        // Birch per hour.
         double perHour = tracker.getBirchPerHour();
-        lines.add(new Line("Birch/hr: " + INT_FMT.format(perHour), COLOR_GREEN));
+        double netPerLog = bazaar.getBestNetPerLog();
 
-        // Bazaar price and derived coin rate.
-        if (bazaar.hasData()) {
-            String label = config.showBuyPrice ? "Buy" : "Sell";
-            double price = bazaar.getDisplayPrice();
-            lines.add(new Line("BZ " + label + ": " + PRICE_FMT.format(price) + " coins", COLOR_GOLD));
-            lines.add(new Line("Coins/hr: " + INT_FMT.format(perHour * price), COLOR_GOLD));
-        } else {
-            lines.add(new Line("BZ: loading...", COLOR_GREY));
+        if (config.showBirchRate) {
+            lines.add(new Line("Birch/hr: " + INT_FMT.format(perHour), COLOR_GREEN));
         }
 
-        // Tree regeneration timer.
-        if (config.regenTimerEnabled) {
+        if (config.showBazaar) {
+            if (bazaar.hasData()) {
+                String label = config.showBuyPrice ? "Buy" : "Sell";
+                lines.add(new Line("BZ " + label + ": " + PRICE_FMT.format(bazaar.getDisplayPrice()),
+                        COLOR_GOLD));
+            } else {
+                lines.add(new Line("BZ: " + bazaar.getStatus(), COLOR_GREY));
+            }
+        }
+
+        if (config.showCoinRate && netPerLog > 0.0) {
+            String taxNote = config.applyBazaarTax ? " net" : "";
+            lines.add(new Line("Coins/hr" + taxNote + ": " + INT_FMT.format(perHour * netPerLog), COLOR_GOLD));
+        }
+
+        if (config.showRegen && config.regenTimerEnabled) {
             lines.add(regenLine());
         }
 
-        // Collection leaderboard rank, noted when you open the leaderboard GUI.
-        if (collectionRank.hasRank()) {
+        if (config.showSession) {
+            lines.add(new Line("Session: " + INT_FMT.format(SessionStats.getSessionBirch())
+                    + " birch / " + INT_FMT.format(SessionStats.getSessionTrees()) + " trees", COLOR_WHITE));
+            lines.add(new Line("Earned: " + INT_FMT.format(SessionStats.getSessionCoins())
+                    + " in " + SessionStats.formatDuration(SessionStats.getSessionElapsedMs()), COLOR_WHITE));
+        }
+
+        if (config.showCollectionRank && collectionRank.hasRank()) {
             String name = collectionRank.getCollectionName();
             String suffix = (name == null || name.isEmpty()) ? "" : " (" + name + ")";
             lines.add(new Line("Collection: #" + INT_FMT.format(collectionRank.getRank()) + suffix, COLOR_AQUA));
         }
 
-        // Leaderboard rank.
-        if (leaderboard.hasRank()) {
-            String title = leaderboard.getRankTitle();
-            String suffix = (title == null || title.isEmpty()) ? "" : " (" + title + ")";
-            lines.add(new Line("Rank: #" + INT_FMT.format(leaderboard.getRank()) + suffix, COLOR_AQUA));
-        } else {
-            lines.add(new Line("Rank: " + leaderboard.getStatus(), COLOR_GREY));
+        if (config.showLeaderboard) {
+            if (leaderboard.hasRank()) {
+                String title = leaderboard.getRankTitle();
+                String suffix = (title == null || title.isEmpty()) ? "" : " (" + title + ")";
+                lines.add(new Line("Rank: #" + INT_FMT.format(leaderboard.getRank()) + suffix, COLOR_AQUA));
+            } else {
+                lines.add(new Line("Rank: " + leaderboard.getStatus(), COLOR_GREY));
+            }
         }
 
         return lines;

@@ -60,18 +60,23 @@ public final class TimerCommand {
         BirchConfig config = BirchConfig.get();
 
         feedback(source, "§6§lBirch Optimizer §7— timer status");
-        feedback(source, "§7Timer mode: " + (config.worldTimersEnabled ? "§aON" : "§cOFF"));
-        feedback(source, "§7Trees tracked: §f" + regenTracker.getTrackedCount()
-                + " §7(downed: §f" + regenTracker.getDownedTrees().size() + "§7)");
+        feedback(source, "§7Tracking: §aalways on §8(automatic, nothing to start)");
+        feedback(source, "§7Floating labels: " + (config.worldTimersEnabled ? "§aON" : "§cOFF"));
+        feedback(source, "§7Trees in range: §f" + regenTracker.getTrackedCount()
+                + " §8(standing " + regenTracker.getReadyCount()
+                + ", regrowing " + regenTracker.getDownedTrees().size() + ")");
 
         if (regenTracker.isCalibrated()) {
-            feedback(source, "§7Measured regen: §f" + SEC_FMT.format(regenTracker.getRegenSeconds())
-                    + "s §7from §f" + regenTracker.getMeasurementCount() + "§7 tree(s)");
-            feedback(source, "§7Last measurement: §f"
-                    + SEC_FMT.format(regenTracker.getLastMeasurementSeconds()) + "s");
+            feedback(source, "§e§lMeasured regen");
+            feedback(source, "§7  Using: §f" + SEC_FMT.format(regenTracker.getRegenSeconds()) + "s");
+            feedback(source, "§7  Mean: §f" + SEC_FMT.format(regenTracker.getMeanRegenSeconds())
+                    + "s §7over §f" + regenTracker.getMeasurementCount() + "§7 cycles");
+            feedback(source, "§7  Fastest: §a" + SEC_FMT.format(regenTracker.getFastestRegenSeconds())
+                    + "s §7Slowest: §c" + SEC_FMT.format(regenTracker.getSlowestRegenSeconds()) + "s");
+            feedback(source, "§7  Last: §f" + SEC_FMT.format(regenTracker.getLastMeasurementSeconds()) + "s");
         } else {
             feedback(source, "§7Regen estimate: §f" + SEC_FMT.format(regenTracker.getRegenSeconds())
-                    + "s §8(not yet measured — chop a tree and watch it regrow)");
+                    + "s §8(no cycle measured yet — it will calibrate itself)");
         }
     }
 

@@ -7,36 +7,44 @@ import java.util.List;
 import java.util.Map;
 
 import com.birchmod.config.BirchConfig;
+import com.birchmod.stats.SessionStats;
+import com.birchmod.util.Notifier;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 
 /**
- * Tracks individual birch trees and times how long each takes to regenerate.
+ * Tracks every birch tree around the player and times how long each takes to
+ * regenerate.
  *
- * A tree is keyed by its base log (the lowest log of the trunk). The timer only
- * starts once the tree is <em>fully</em> downed — every log in its trunk volume
- * is gone — not when the first log is broken.
+ * Tracking is entirely automatic — there is nothing to start or stop. Trees in
+ * range are discovered by periodic proximity scan, keyed by their base log (the
+ * lowest log of the trunk). The clock for a tree starts the moment it is
+ * <em>fully</em> downed, and stops the moment logs reappear, which yields a
+ * real measured regen duration rather than an assumed constant.
  *
- * The regen duration is measured rather than assumed: when logs reappear at a
- * downed tree, the elapsed time is folded into a running average, so the
- * countdown calibrates itself to Hypixel's real rate.
+ * Config flags only ever affect <em>display</em>. Measurement always runs.
  */
 public class TreeRegenTracker {
 
-    private static final int MAX_TREES = 32;
-    private static final int SCAN_INTERVAL_TICKS = 5; // 4x per second
+    private static final int MAX_TREES = 128;
 
-    /** Trunk search volume around the base log. */
+    /** Fast pass: detect chop/regrow transitions on known trees. */
+    private static final int UPDATE_INTERVAL_TICKS = 4; // 5x per second
+
+    /** Slow pass: sweep the area for trees we have not seen yet. */
+    private static final int DISCOVER_INTERVAL_TICKS = 40; // every 2s
+
+    /** Horizontal radius of the discovery sweep, in blocks. */
+    private static final int DISCOVER_RADIUS = 16;
+    private static final int DISCOVER_BELOW = 6;
+    private static final int DISCOVER_ABOVE = 12;
+
+    /** Trunk search volume above a base log. */
     private static final int TRUNK_RADIUS = 2;
     private static final int TRUNK_HEIGHT = 12;
-
-    /** Walking down from a hit log to find the base cannot exceed this. */
-    private static final int MAX_BASE_WALK = 24;
 
     /** Ignore implausible measurements (block replaced by something else). */
     private static final double MAX_PLAUSIBLE_REGEN_SECONDS = 900.0;
@@ -50,6 +58,11 @@ public class TreeRegenTracker {
         int logCount;
         boolean downed;
         long downedAt;
+        boolean alerted;
+
+        /** Per-tree history, so individual trees can be compared. */
+        int regenCount;
+        double lastRegenSeconds = -1.0;
 
         Tree(BlockPos base, int logCount) {
             this.base = base;
@@ -63,63 +76,88 @@ public class TreeRegenTracker {
         public long getDownedAt() {
             return downedAt;
         }
+
+        public int getRegenCount() {
+            return regenCount;
+        }
+
+        public double getLastRegenSeconds() {
+            return lastRegenSeconds;
+        }
     }
 
     private final Map<BlockPos, Tree> trees = new HashMap<>();
 
+    // ---- Aggregate measurements, accumulated automatically ----
     private double averageRegenSeconds = -1.0;
+    private double fastestRegenSeconds = -1.0;
+    private double slowestRegenSeconds = -1.0;
+    private double totalRegenSeconds = 0.0;
     private int measurementCount = 0;
     private double lastMeasurementSeconds = -1.0;
 
-    private int tickCounter = 0;
+    private int updateCounter = 0;
+    private int discoverCounter = 0;
 
     public void tick(Minecraft client) {
-        if (!BirchConfig.get().regenTimerEnabled) {
-            return;
-        }
         if (client == null || client.player == null || client.level == null) {
             trees.clear();
             return;
         }
 
-        if (++tickCounter < SCAN_INTERVAL_TICKS) {
+        // Discovery sweep — finds trees without the player aiming at anything.
+        if (++discoverCounter >= DISCOVER_INTERVAL_TICKS) {
+            discoverCounter = 0;
+            discoverNearbyTrees(client);
+        }
+
+        if (++updateCounter < UPDATE_INTERVAL_TICKS) {
             return;
         }
-        tickCounter = 0;
+        updateCounter = 0;
 
-        discoverLookedAtTree(client);
         updateTrees(client);
     }
 
-    /** Register the tree the player is aiming at, so it can be watched. */
-    private void discoverLookedAtTree(Minecraft client) {
-        HitResult hit = client.hitResult;
-        if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
+    /**
+     * Sweep the area around the player for birch trunk bases. A base is a birch
+     * log with a non-birch block beneath it, which is cheap to test and unique
+     * per trunk.
+     */
+    private void discoverNearbyTrees(Minecraft client) {
+        if (trees.size() >= MAX_TREES) {
             return;
         }
-        BlockPos pos = ((BlockHitResult) hit).getBlockPos();
-        if (!isBirchAt(client, pos)) {
-            return;
-        }
+        BlockPos origin = client.player.blockPosition();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        BlockPos.MutableBlockPos below = new BlockPos.MutableBlockPos();
 
-        BlockPos base = findBase(client, pos);
-        if (trees.containsKey(base) || trees.size() >= MAX_TREES) {
-            return;
-        }
-        trees.put(base, new Tree(base, countLogs(client, base)));
-    }
+        for (int dy = -DISCOVER_BELOW; dy <= DISCOVER_ABOVE; dy++) {
+            for (int dx = -DISCOVER_RADIUS; dx <= DISCOVER_RADIUS; dx++) {
+                for (int dz = -DISCOVER_RADIUS; dz <= DISCOVER_RADIUS; dz++) {
+                    int x = origin.getX() + dx;
+                    int y = origin.getY() + dy;
+                    int z = origin.getZ() + dz;
 
-    /** Walk down the trunk to the lowest connected birch log. */
-    private BlockPos findBase(Minecraft client, BlockPos from) {
-        BlockPos base = from;
-        for (int i = 0; i < MAX_BASE_WALK; i++) {
-            BlockPos below = base.below();
-            if (!isBirchAt(client, below)) {
-                break;
+                    cursor.set(x, y, z);
+                    if (!isBirchAt(client, cursor)) {
+                        continue;
+                    }
+                    below.set(x, y - 1, z);
+                    if (isBirchAt(client, below)) {
+                        continue; // not the base of this trunk
+                    }
+
+                    BlockPos base = cursor.immutable();
+                    if (!trees.containsKey(base)) {
+                        if (trees.size() >= MAX_TREES) {
+                            return;
+                        }
+                        trees.put(base, new Tree(base, countLogs(client, base)));
+                    }
+                }
             }
-            base = below;
         }
-        return base.immutable();
     }
 
     /** Detect full-chop (count -> 0) and regrowth (0 -> count) transitions. */
@@ -141,11 +179,13 @@ public class TreeRegenTracker {
                 // Fully downed: this is when the clock starts.
                 tree.downed = true;
                 tree.downedAt = now;
+                tree.alerted = false;
+                SessionStats.recordTreeChopped();
             } else if (tree.downed && count > 0) {
                 // Regrown — a real, measured cycle.
                 double seconds = (now - tree.downedAt) / 1000.0;
                 if (seconds > 0.0 && seconds <= MAX_PLAUSIBLE_REGEN_SECONDS) {
-                    recordMeasurement(seconds);
+                    recordMeasurement(tree, seconds);
                 }
                 tree.downed = false;
                 tree.downedAt = 0L;
@@ -153,17 +193,55 @@ public class TreeRegenTracker {
 
             tree.logCount = count;
         }
+
+        alertIfReady();
     }
 
-    private void recordMeasurement(double seconds) {
+    /**
+     * Announce trees whose countdown has elapsed. Each tree alerts at most once
+     * per chop, and {@link Notifier} rate-limits the alerts themselves.
+     */
+    private void alertIfReady() {
+        List<Tree> justReady = new ArrayList<>();
+
+        for (Tree tree : trees.values()) {
+            if (tree.downed && !tree.alerted && getSecondsUntilRegen(tree) == 0.0) {
+                justReady.add(tree);
+            }
+        }
+
+        if (justReady.isEmpty()) {
+            return;
+        }
+        // Mark them regardless of whether the alert was throttled, so a
+        // suppressed alert does not re-fire every tick.
+        for (Tree tree : justReady) {
+            tree.alerted = true;
+        }
+        Notifier.treeReady(justReady.size());
+    }
+
+    private void recordMeasurement(Tree tree, double seconds) {
         lastMeasurementSeconds = seconds;
+        totalRegenSeconds += seconds;
+        measurementCount++;
+
+        tree.regenCount++;
+        tree.lastRegenSeconds = seconds;
+
+        if (fastestRegenSeconds < 0.0 || seconds < fastestRegenSeconds) {
+            fastestRegenSeconds = seconds;
+        }
+        if (seconds > slowestRegenSeconds) {
+            slowestRegenSeconds = seconds;
+        }
+
         if (averageRegenSeconds < 0.0) {
             averageRegenSeconds = seconds;
         } else {
             // Running average weighted toward recent observations.
             averageRegenSeconds = (averageRegenSeconds * 0.7) + (seconds * 0.3);
         }
-        measurementCount++;
     }
 
     /** Count birch logs in the trunk volume above a base position. */
@@ -188,7 +266,7 @@ public class TreeRegenTracker {
         return state.is(Blocks.BIRCH_LOG) || state.is(Blocks.BIRCH_WOOD);
     }
 
-    // ---- Queries used by the HUD and the world renderer ----
+    // ---- Queries used by the HUD, world renderer and commands ----
 
     /** The regen duration in use: measured if known, else the configured guess. */
     public double getRegenSeconds() {
@@ -205,6 +283,19 @@ public class TreeRegenTracker {
 
     public double getLastMeasurementSeconds() {
         return lastMeasurementSeconds;
+    }
+
+    public double getFastestRegenSeconds() {
+        return fastestRegenSeconds;
+    }
+
+    public double getSlowestRegenSeconds() {
+        return slowestRegenSeconds;
+    }
+
+    /** True mean across every cycle measured, as opposed to the weighted average. */
+    public double getMeanRegenSeconds() {
+        return measurementCount > 0 ? totalRegenSeconds / measurementCount : -1.0;
     }
 
     /** Seconds until a specific tree should regrow (0 = due now). */
@@ -246,10 +337,24 @@ public class TreeRegenTracker {
         return soonest;
     }
 
-    /** Forget all trees and measurements. */
+    /** How many tracked trees are standing and choppable right now. */
+    public int getReadyCount() {
+        int ready = 0;
+        for (Tree tree : trees.values()) {
+            if (!tree.downed && tree.logCount > 0) {
+                ready++;
+            }
+        }
+        return ready;
+    }
+
+    /** Forget tracked trees and all measurements. */
     public void reset() {
         trees.clear();
         averageRegenSeconds = -1.0;
+        fastestRegenSeconds = -1.0;
+        slowestRegenSeconds = -1.0;
+        totalRegenSeconds = 0.0;
         lastMeasurementSeconds = -1.0;
         measurementCount = 0;
     }

@@ -69,9 +69,18 @@ public class TreeTimerRenderer {
         MultiBufferSource.BufferSource buffers = context.bufferSource();
         Font font = client.font;
 
+        double maxRangeSq = config.worldTimerRange * config.worldTimerRange;
+
         for (TreeRegenTracker.Tree tree : downed) {
             double remaining = regenTracker.getSecondsUntilRegen(tree);
             if (remaining < 0.0) {
+                continue;
+            }
+            // Skip labels too far away to be useful.
+            double dx = tree.base.getX() + 0.5 - cameraPos.x;
+            double dy = tree.base.getY() + LABEL_HEIGHT - cameraPos.y;
+            double dz = tree.base.getZ() + 0.5 - cameraPos.z;
+            if (dx * dx + dy * dy + dz * dz > maxRangeSq) {
                 continue;
             }
 

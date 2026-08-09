@@ -3,6 +3,9 @@ package com.birchmod.tracking;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+import com.birchmod.BirchMod;
+import com.birchmod.stats.SessionStats;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
@@ -63,6 +66,12 @@ public class BirchTracker {
             samples.addLast(new Sample(now, delta));
             totalCollected += delta;
             purgeOld(now);
+
+            // Value the haul at the best tax-adjusted payout available.
+            double unitPrice = BirchMod.bazaar != null ? BirchMod.bazaar.getBestNetPerLog() : -1.0;
+            SessionStats.recordBirch(delta, unitPrice);
+            SessionStats.recordRate(getBirchPerHour());
+            SessionStats.saveThrottled();
         }
     }
 

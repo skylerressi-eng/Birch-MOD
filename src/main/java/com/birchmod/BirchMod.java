@@ -2,15 +2,20 @@ package com.birchmod;
 
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
+import com.birchmod.command.BirchCommand;
 import com.birchmod.command.TimerCommand;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.hud.BirchHud;
+import com.birchmod.input.Keybinds;
 import com.birchmod.render.TreeTimerRenderer;
+import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
 import com.birchmod.tracking.TreeRegenTracker;
+import com.birchmod.util.SkyblockDetector;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
@@ -22,10 +27,11 @@ import net.minecraft.resources.Identifier;
  *
  * Features:
  *  - Birch/hour, measured from inventory deltas (works on a remote server).
- *  - Live Bazaar price of Birch Wood, refreshed every 10 minutes.
+ *  - Tax-aware Bazaar pricing across birch products, refreshed every 10 minutes.
+ *  - Session and lifetime statistics, persisted between runs.
+ *  - Per-tree regeneration timers floating above each downed tree, with alerts.
  *  - Collection leaderboard rank, captured when you open the leaderboard GUI.
- *  - Per-tree regeneration timers floating above each downed tree.
- *  - {@code /timer mode} to toggle the floating timers.
+ *  - {@code /birch} and {@code /timer} commands plus rebindable keys.
  */
 public class BirchMod implements ClientModInitializer {
 
@@ -40,6 +46,7 @@ public class BirchMod implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         BirchConfig.load();
+        SessionStats.load();
 
         tracker = new BirchTracker();
         regenTracker = new TreeRegenTracker();
@@ -51,11 +58,18 @@ public class BirchMod implements ClientModInitializer {
         bazaar.start();
         leaderboard.start();
 
+        Keybinds.register();
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            SkyblockDetector.update(client);
             tracker.tick(client);
             regenTracker.tick(client);
             collectionRank.tick(client);
+            Keybinds.tick(client, BirchMod::resetSession);
         });
+
+        // Persist lifetime totals on a clean exit.
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> SessionStats.save());
 
         BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, leaderboard);
         HudElementRegistry.attachElementBefore(
@@ -67,5 +81,21 @@ public class BirchMod implements ClientModInitializer {
         LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(treeTimers::render);
 
         TimerCommand.register(regenTracker);
+        BirchCommand.register(tracker, regenTracker, collectionRank, bazaar, leaderboard);
+    }
+
+    /** Clear all session-scoped counters. Shared by the keybind and command. */
+    public static void resetSession() {
+        if (tracker != null) {
+            tracker.reset();
+        }
+        if (regenTracker != null) {
+            regenTracker.reset();
+        }
+        if (collectionRank != null) {
+            collectionRank.reset();
+        }
+        SessionStats.resetSession();
+        SessionStats.save();
     }
 }
