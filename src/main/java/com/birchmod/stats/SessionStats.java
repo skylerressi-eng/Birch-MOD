@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -35,6 +37,15 @@ public final class SessionStats {
         public double coinsEarned = 0.0;
         public long playtimeMs = 0L;
         public double bestBirchPerHour = 0.0;
+
+        /**
+         * What birch regrowth has actually been measured at, carried between
+         * sessions. Without this the timer relearns from a guess on every
+         * login, and every countdown is an estimate until enough trees have
+         * been watched all over again.
+         */
+        public double measuredRegenSeconds = -1.0;
+        public long regenSamples = 0L;
     }
 
     private static Lifetime lifetime = new Lifetime();
@@ -65,6 +76,22 @@ public final class SessionStats {
     /** A gap longer than this counts as idle, not gathering. */
     private static final long ACTIVITY_TIMEOUT_MS = 60_000L;
 
+    /** Window for the live trees-per-minute figure. */
+    private static final long RATE_WINDOW_MS = 5L * 60L * 1000L;
+
+    /**
+     * Shortest span the live rate is extrapolated from.
+     *
+     * Three trees felled in the first few seconds is not three hundred an hour.
+     * Without a floor the figure spikes absurdly at the start of a run and then
+     * collapses, which reads as a broken counter and makes the comparison
+     * against a plan meaningless.
+     */
+    private static final long MIN_RATE_SPAN_MS = 60_000L;
+
+    /** Timestamps of recent chops, for comparing real output against a plan. */
+    private static final Deque<Long> recentChops = new ArrayDeque<>();
+
     private SessionStats() {
     }
 
@@ -88,7 +115,63 @@ public final class SessionStats {
     public static void recordTreeChopped() {
         sessionTrees++;
         lifetime.treesChopped++;
+        synchronized (recentChops) {
+            recentChops.addLast(System.currentTimeMillis());
+        }
         markActive();
+    }
+
+    /**
+     * Fold a measured regrowth into the persisted calibration.
+     *
+     * Weighted toward recent observations, matching how the tracker averages
+     * within a session, so a rate that shifts is followed rather than diluted
+     * by everything ever seen.
+     */
+    public static void recordRegenMeasurement(double seconds) {
+        if (seconds <= 0.0) {
+            return;
+        }
+        double current = lifetime.measuredRegenSeconds;
+        lifetime.measuredRegenSeconds = current <= 0.0 ? seconds : (current * 0.8) + (seconds * 0.2);
+        lifetime.regenSamples++;
+    }
+
+    public static double getPersistedRegenSeconds() {
+        return lifetime.measuredRegenSeconds;
+    }
+
+    public static long getRegenSamples() {
+        return lifetime.regenSamples;
+    }
+
+    /**
+     * Trees felled per minute over the last few minutes.
+     *
+     * This is the same unit the route planner predicts in, so the two can be
+     * compared directly: a route promising nine trees a minute that delivers
+     * six is telling you something the plan alone cannot.
+     */
+    public static double getRecentTreesPerMinute() {
+        long now = System.currentTimeMillis();
+        int count;
+        long oldest;
+
+        synchronized (recentChops) {
+            while (!recentChops.isEmpty() && now - recentChops.peekFirst() > RATE_WINDOW_MS) {
+                recentChops.pollFirst();
+            }
+            count = recentChops.size();
+            oldest = recentChops.isEmpty() ? now : recentChops.peekFirst();
+        }
+
+        if (count < 2) {
+            return 0.0;
+        }
+        // Measure over the span actually observed, floored so a burst of chops
+        // in the first seconds cannot read as a colossal rate.
+        double spanMinutes = Math.max(now - oldest, MIN_RATE_SPAN_MS) / 60_000.0;
+        return count / spanMinutes;
     }
 
     /**
@@ -174,6 +257,9 @@ public final class SessionStats {
         sessionStart = System.currentTimeMillis();
         activeMs = 0L;
         lastActivityAt = 0L;
+        synchronized (recentChops) {
+            recentChops.clear();
+        }
     }
 
     private static Path path() {
@@ -223,6 +309,8 @@ public final class SessionStats {
         copy.coinsEarned = source.coinsEarned;
         copy.playtimeMs = source.playtimeMs;
         copy.bestBirchPerHour = source.bestBirchPerHour;
+        copy.measuredRegenSeconds = source.measuredRegenSeconds;
+        copy.regenSamples = source.regenSamples;
         return copy;
     }
 

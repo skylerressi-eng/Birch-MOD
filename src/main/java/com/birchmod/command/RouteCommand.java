@@ -8,6 +8,7 @@ import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteOptimizer;
 import com.birchmod.route.RouteRecorder;
+import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.TreeRegenTracker;
 
 import com.mojang.brigadier.CommandDispatcher;
@@ -221,6 +222,8 @@ public final class RouteCommand {
                 + " §7Tracers: " + onOff(config.tracersEnabled)
                 + " §7Full path: " + onOff(config.showFullPath));
 
+        performance(source, regenSecondsOf(routeBuilder));
+
         for (RouteBuilder.Stop stop : routeBuilder.getRoute()) {
             BlockPos center = stop.center();
             String eta = stop.etaSeconds() <= 0.01
@@ -324,6 +327,50 @@ public final class RouteCommand {
             feedback(source, "§a  Lap covers the regen — trees are ready as you reach them.");
         }
         feedback(source, "§7  Throughput: §f" + SEC_FMT.format(score.treesPerMinute()) + " trees/min");
+    }
+
+    /**
+     * Compare what the active route promised against what is actually being
+     * felled, so a plan that looks good on paper can be checked against the
+     * ground.
+     */
+    private static void performance(FabricClientCommandSource source, double regenSeconds) {
+        RecordedRoute active = RouteLibrary.getActive();
+        double actual = SessionStats.getRecentTreesPerMinute();
+
+        if (active == null) {
+            if (actual > 0.0) {
+                feedback(source, "§7Actual: §f" + SEC_FMT.format(actual)
+                        + "§7 trees/min §8(last few minutes)");
+            }
+            return;
+        }
+
+        RouteLibrary.Score predicted = RouteLibrary.score(active, regenSeconds);
+        if (actual <= 0.0) {
+            feedback(source, "§7Following §f" + active.name + "§7, predicted §f"
+                    + SEC_FMT.format(predicted.treesPerMinute()) + "§7 trees/min");
+            return;
+        }
+
+        int percent = (int) Math.round(actual / Math.max(predicted.treesPerMinute(), 0.001) * 100.0);
+        String colour = percent >= 85 ? "§a" : percent >= 60 ? "§e" : "§c";
+
+        feedback(source, "§7Following §f" + active.name);
+        feedback(source, "§7  Predicted: §f" + SEC_FMT.format(predicted.treesPerMinute())
+                + "§7 trees/min §8· §7actual: " + colour + SEC_FMT.format(actual)
+                + "§7 trees/min " + colour + "(" + percent + "%)");
+
+        if (percent < 60) {
+            feedback(source, "§8  Well under plan — walking the loop slower than assumed, "
+                    + "or trees are being missed.");
+        }
+    }
+
+    private static double regenSecondsOf(RouteBuilder routeBuilder) {
+        return com.birchmod.BirchMod.regenTracker != null
+                ? com.birchmod.BirchMod.regenTracker.getRegenSeconds()
+                : 60.0;
     }
 
     private static String onOff(boolean value) {

@@ -445,6 +445,9 @@ public class TreeRegenTracker {
     }
 
     private void recordMeasurement(Tree tree, double seconds) {
+        // Remembered across sessions so the next login starts calibrated.
+        SessionStats.recordRegenMeasurement(seconds);
+
         lastMeasurementSeconds = seconds;
         totalRegenSeconds += seconds;
         measurementCount++;
@@ -474,13 +477,33 @@ public class TreeRegenTracker {
 
     // ---- Queries used by the HUD, world renderer and commands ----
 
-    /** The regen duration in use: measured if known, else the configured guess. */
+    /**
+     * The regen duration in use.
+     *
+     * This session's own measurements first, then what has been measured in
+     * past sessions, and only then the configured guess. Falling straight back
+     * to the guess on every login meant the timer relearned from scratch each
+     * time and every countdown was an estimate until it had.
+     */
     public double getRegenSeconds() {
-        return averageRegenSeconds > 0.0 ? averageRegenSeconds : BirchConfig.get().defaultRegenSeconds;
+        if (averageRegenSeconds > 0.0) {
+            return averageRegenSeconds;
+        }
+        double remembered = SessionStats.getPersistedRegenSeconds();
+        if (remembered > 0.0) {
+            return remembered;
+        }
+        return BirchConfig.get().defaultRegenSeconds;
     }
 
+    /** True when the figure comes from measurement rather than the default. */
     public boolean isCalibrated() {
-        return measurementCount > 0;
+        return measurementCount > 0 || SessionStats.getPersistedRegenSeconds() > 0.0;
+    }
+
+    /** Cycles measured across every session, not just this one. */
+    public long getLifetimeMeasurementCount() {
+        return SessionStats.getRegenSamples();
     }
 
     public int getMeasurementCount() {
@@ -514,6 +537,15 @@ public class TreeRegenTracker {
             return tree.lastRegenSeconds;
         }
         return getRegenSeconds();
+    }
+
+    /** Mean across every cycle this session, or the remembered figure. */
+    public double getEffectiveMeanRegen() {
+        double sessionMean = getMeanRegenSeconds();
+        if (sessionMean > 0.0) {
+            return sessionMean;
+        }
+        return SessionStats.getPersistedRegenSeconds();
     }
 
     /**

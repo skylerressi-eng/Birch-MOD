@@ -71,11 +71,18 @@ public final class TimerCommand {
         if (regenTracker.isCalibrated()) {
             feedback(source, "§e§lMeasured regen");
             feedback(source, "§7  Using: §f" + SEC_FMT.format(regenTracker.getRegenSeconds()) + "s");
-            feedback(source, "§7  Mean: §f" + SEC_FMT.format(regenTracker.getMeanRegenSeconds())
-                    + "s §7over §f" + regenTracker.getMeasurementCount() + "§7 cycles");
-            feedback(source, "§7  Fastest: §a" + SEC_FMT.format(regenTracker.getFastestRegenSeconds())
-                    + "s §7Slowest: §c" + SEC_FMT.format(regenTracker.getSlowestRegenSeconds()) + "s");
-            feedback(source, "§7  Last: §f" + SEC_FMT.format(regenTracker.getLastMeasurementSeconds()) + "s");
+            feedback(source, "§7  Mean: §f" + SEC_FMT.format(regenTracker.getEffectiveMeanRegen())
+                    + "s §7over §f" + regenTracker.getMeasurementCount() + "§7 cycles this session");
+            feedback(source, "§7  Remembered: §f" + regenTracker.getLifetimeMeasurementCount()
+                    + "§7 cycles across all sessions §8(kept between logins)");
+            // Fastest, slowest and last are session-only. With calibration
+            // restored from history but nothing measured yet this login, they
+            // still hold their -1 sentinel and would print as "-1.0s".
+            if (regenTracker.getMeasurementCount() > 0) {
+                feedback(source, "§7  Fastest: §a" + SEC_FMT.format(regenTracker.getFastestRegenSeconds())
+                        + "s §7Slowest: §c" + SEC_FMT.format(regenTracker.getSlowestRegenSeconds()) + "s");
+                feedback(source, "§7  Last: §f" + SEC_FMT.format(regenTracker.getLastMeasurementSeconds()) + "s");
+            }
         } else {
             feedback(source, "§7Regen estimate: §f" + SEC_FMT.format(regenTracker.getRegenSeconds())
                     + "s §8(no cycle measured yet — it will calibrate itself)");
