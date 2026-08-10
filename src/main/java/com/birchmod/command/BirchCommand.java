@@ -2,6 +2,7 @@ package com.birchmod.command;
 
 import java.text.DecimalFormat;
 
+import com.birchmod.BirchMod;
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
@@ -9,6 +10,7 @@ import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
 import com.birchmod.tracking.TreeRegenTracker;
+import com.birchmod.util.Guard;
 import com.birchmod.util.SkyblockDetector;
 
 import com.mojang.brigadier.CommandDispatcher;
@@ -170,6 +172,23 @@ public final class BirchCommand {
                             return 1;
                         })))
 
+                // /birch safemode <on|off> — disable all in-world rendering
+                .then(ClientCommands.literal("safemode")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().safeMode = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            feedback(ctx.getSource(), "§7Safe mode: " + onOff(BirchConfig.get().safeMode)
+                                    + " §8(in-world rendering "
+                                    + (BirchConfig.get().safeMode ? "off" : "on") + ")");
+                            return 1;
+                        })))
+
+                // /birch diag — what has failed, for bug reports
+                .then(ClientCommands.literal("diag").executes(ctx -> {
+                    diagnostics(ctx.getSource());
+                    return 1;
+                }))
+
                 // /birch help
                 .then(ClientCommands.literal("help").executes(ctx -> {
                     help(ctx.getSource());
@@ -258,6 +277,36 @@ public final class BirchCommand {
         feedback(source, "§8Updated " + (mins <= 0 ? "just now" : mins + "m ago") + ", refreshes every 10m.");
     }
 
+    /** Report which components have thrown — the first thing to check on a bug. */
+    private static void diagnostics(FabricClientCommandSource source) {
+        header(source);
+        feedback(source, "§7Version: §f" + BirchMod.VERSION + " §7for MC §f26.1.2 §8(no mixins)");
+        feedback(source, "§7Safe mode: " + onOff(BirchConfig.get().safeMode));
+
+        String[] features = {
+                "hud", "tracers", "tree-timers", "birch-tracker", "regen-tracker",
+                "collection-rank", "route-builder", "keybinds", "skyblock-detect"
+        };
+
+        boolean anyFailure = false;
+        for (String feature : features) {
+            int count = Guard.getFailureCount(feature);
+            if (count == 0) {
+                continue;
+            }
+            anyFailure = true;
+            String state = Guard.isDisabled(feature) ? "§cDISABLED" : "§eerrored";
+            feedback(source, "§7  " + feature + ": " + state + " §8(" + count + " failures)");
+        }
+
+        if (!anyFailure) {
+            feedback(source, "§aNo component has thrown this session.");
+            feedback(source, "§8If the game still misbehaves, the cause is outside this mod.");
+        } else {
+            feedback(source, "§8Full stack traces are in your latest.log — search 'BirchOptimizer'.");
+        }
+    }
+
     private static void help(FabricClientCommandSource source) {
         header(source);
         feedback(source, "§f/birch §7— overview");
@@ -278,6 +327,8 @@ public final class BirchCommand {
         feedback(source, "§f/route <true|false> §7— toggle route overlay");
         feedback(source, "§f/route tracers <true|false> §7· §f/route chain <true|false>");
         feedback(source, "§f/route length <1-16> §7· §f/route center <0-12>");
+        feedback(source, "§f/birch safemode <true|false> §7— disable in-world rendering");
+        feedback(source, "§f/birch diag §7— report component failures");
     }
 
     private static void header(FabricClientCommandSource source) {

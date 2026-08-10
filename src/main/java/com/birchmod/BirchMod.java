@@ -15,6 +15,7 @@ import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
 import com.birchmod.tracking.TreeRegenTracker;
+import com.birchmod.util.Guard;
 import com.birchmod.util.SkyblockDetector;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -39,6 +40,7 @@ import net.minecraft.resources.Identifier;
 public class BirchMod implements ClientModInitializer {
 
     public static final String MOD_ID = "birchoptimizer";
+    public static final String VERSION = "1.2.0";
 
     public static BirchTracker tracker;
     public static TreeRegenTracker regenTracker;
@@ -65,15 +67,19 @@ public class BirchMod implements ClientModInitializer {
 
         Keybinds.register();
 
+        // Every entry point is guarded: this mod runs inside someone else's tick
+        // and render loops, and must never be the reason their game dies.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            SkyblockDetector.update(client);
-            tracker.tick(client);
-            regenTracker.tick(client);
-            collectionRank.tick(client);
-            if (client.player != null) {
-                routeBuilder.update(client.player.position());
-            }
-            Keybinds.tick(client, BirchMod::resetSession);
+            Guard.run("skyblock-detect", () -> SkyblockDetector.update(client));
+            Guard.run("birch-tracker", () -> tracker.tick(client));
+            Guard.run("regen-tracker", () -> regenTracker.tick(client));
+            Guard.run("collection-rank", () -> collectionRank.tick(client));
+            Guard.run("route-builder", () -> {
+                if (client.player != null) {
+                    routeBuilder.update(client.player.position());
+                }
+            });
+            Guard.run("keybinds", () -> Keybinds.tick(client, BirchMod::resetSession));
         });
 
         // Persist lifetime totals on a clean exit.
@@ -83,13 +89,23 @@ public class BirchMod implements ClientModInitializer {
         HudElementRegistry.attachElementBefore(
                 VanillaHudElements.CHAT,
                 Identifier.fromNamespaceAndPath(MOD_ID, "birch_overlay"),
-                hud);
+                (graphics, delta) -> Guard.run("hud", () -> hud.extractRenderState(graphics, delta)));
 
         TreeTimerRenderer treeTimers = new TreeTimerRenderer(regenTracker);
-        LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(treeTimers::render);
+        LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(context ->
+                Guard.run("tree-timers", () -> {
+                    if (!BirchConfig.get().safeMode) {
+                        treeTimers.render(context);
+                    }
+                }));
 
         TracerRenderer tracers = new TracerRenderer(routeBuilder);
-        LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(tracers::render);
+        LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(context ->
+                Guard.run("tracers", () -> {
+                    if (!BirchConfig.get().safeMode) {
+                        tracers.render(context);
+                    }
+                }));
 
         TimerCommand.register(regenTracker);
         BirchCommand.register(tracker, regenTracker, collectionRank, bazaar, leaderboard);

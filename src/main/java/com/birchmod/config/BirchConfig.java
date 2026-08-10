@@ -62,6 +62,13 @@ public final class BirchConfig {
     /** Hide in-world timers beyond this distance, in blocks. */
     public double worldTimerRange = 48.0;
 
+    /**
+     * Disable all in-world rendering (tracers, highlights, floating timers)
+     * while keeping the HUD and tracking. The escape hatch if another mod's
+     * renderer disagrees with ours.
+     */
+    public boolean safeMode = false;
+
     // ---- Route planning ----
     /** Draw the planned route: green highlight on each tree's centre block. */
     public boolean routeEnabled = true;
