@@ -61,6 +61,8 @@ public final class BirchConfig {
     public double defaultRegenSeconds = 60.0;
     /** Hide in-world timers beyond this distance, in blocks. */
     public double worldTimerRange = 48.0;
+    /** Outline logs left behind on trees chopped into but not finished. */
+    public boolean highlightLeftoverLogs = true;
 
     /**
      * Disable all in-world rendering (tracers, highlights, floating timers)

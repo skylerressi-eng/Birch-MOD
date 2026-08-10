@@ -66,6 +66,13 @@ public class TreeRegenTracker {
     /** Ignore implausible measurements (block replaced by something else). */
     private static final double MAX_PLAUSIBLE_REGEN_SECONDS = 900.0;
 
+    /**
+     * A tree must stay down at least this long before regrowth is believed.
+     * Chunks briefly read as air while they reload, which otherwise registers
+     * as an instant chop-and-regrow and inflates the count.
+     */
+    private static final long MIN_DOWNED_MS = 1_500L;
+
     /** Stop tracking trees further away than this (squared). */
     private static final double FORGET_DISTANCE_SQ = 64.0 * 64.0;
 
@@ -75,7 +82,6 @@ public class TreeRegenTracker {
         boolean standing;
         boolean downed;
         long downedAt;
-        boolean alerted;
 
         /** Per-tree history, so individual trees can be compared. */
         int regenCount;
@@ -86,6 +92,22 @@ public class TreeRegenTracker {
          * offset from the base. Written on the client thread, read by renderers.
          */
         volatile BlockPos target;
+
+        /** Logs currently in the trunk column, and the most ever seen there. */
+        int logCount;
+        int fullLogCount;
+
+        /**
+         * Bit per trunk offset that still holds a log, so leftover logs can be
+         * located without re-scanning on the render thread.
+         */
+        volatile int logMask;
+
+        /**
+         * True when this tree has been chopped into and left unfinished: logs
+         * are missing compared with its own full height, but some remain.
+         */
+        volatile boolean partiallyChopped;
 
         Tree(BlockPos base, boolean standing) {
             this.base = base;
@@ -118,6 +140,14 @@ public class TreeRegenTracker {
         public double getLastRegenSeconds() {
             return lastRegenSeconds;
         }
+
+        public boolean isPartiallyChopped() {
+            return partiallyChopped;
+        }
+
+        public int getLogMask() {
+            return logMask;
+        }
     }
 
     /**
@@ -137,6 +167,7 @@ public class TreeRegenTracker {
     private double totalRegenSeconds = 0.0;
     private int measurementCount = 0;
     private double lastMeasurementSeconds = -1.0;
+    private int regeneratedCount = 0;
 
     private int updateCounter = 0;
     private int discoverCounter = 0;
@@ -264,6 +295,7 @@ public class TreeRegenTracker {
     private void updateTrees(Minecraft client) {
         long now = System.currentTimeMillis();
         BlockPos playerPos = client.player.blockPosition();
+        int regrewThisPass = 0;
 
         for (Iterator<Map.Entry<BlockPos, Tree>> it = trees.entrySet().iterator(); it.hasNext(); ) {
             Tree tree = it.next().getValue();
@@ -273,28 +305,50 @@ public class TreeRegenTracker {
                 continue;
             }
 
+            // An unloaded chunk reads as air. Believing that would register a
+            // phantom chop, then a phantom regrow the moment it loads again.
+            if (!client.level.hasChunkAt(tree.base)) {
+                continue;
+            }
+
             boolean standing = probeTrunk(client, tree);
 
             if (!tree.downed && tree.standing && !standing) {
                 // Fully downed: this is when the clock starts.
                 tree.downed = true;
                 tree.downedAt = now;
-                tree.alerted = false;
                 SessionStats.recordTreeChopped();
             } else if (tree.downed && standing) {
-                // Regrown — a real, measured cycle.
-                double seconds = (now - tree.downedAt) / 1000.0;
-                if (seconds > 0.0 && seconds <= MAX_PLAUSIBLE_REGEN_SECONDS) {
+                long downFor = now - tree.downedAt;
+                if (downFor < MIN_DOWNED_MS) {
+                    // Too quick to be a real regen cycle: treat the whole thing
+                    // as a glitch rather than counting or measuring it.
+                    tree.downed = false;
+                    tree.downedAt = 0L;
+                    tree.standing = standing;
+                    continue;
+                }
+
+                double seconds = downFor / 1000.0;
+                if (seconds <= MAX_PLAUSIBLE_REGEN_SECONDS) {
                     recordMeasurement(tree, seconds);
                 }
+                // Only a tree that actually came back counts as regenerated.
+                regeneratedCount++;
+                regrewThisPass++;
+
                 tree.downed = false;
                 tree.downedAt = 0L;
+                tree.fullLogCount = tree.logCount;
             }
 
             tree.standing = standing;
         }
 
-        alertIfReady();
+        // One notification per pass, however many trees returned at once.
+        if (regrewThisPass > 0) {
+            Notifier.treeReady(regrewThisPass);
+        }
     }
 
     /**
@@ -313,6 +367,8 @@ public class TreeRegenTracker {
         BlockPos base = tree.base;
         int lowest = Integer.MAX_VALUE;
         int highest = Integer.MIN_VALUE;
+        int mask = 0;
+        int count = 0;
 
         for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
             int y = base.getY() + dy;
@@ -322,13 +378,28 @@ public class TreeRegenTracker {
                     lowest = y;
                 }
                 highest = y;
+                mask |= (1 << dy);
+                count++;
             }
         }
 
+        tree.logCount = count;
+        tree.logMask = mask;
+
         if (highest == Integer.MIN_VALUE) {
             tree.target = base;
+            tree.partiallyChopped = false;
             return false;
         }
+
+        // A tree only counts as partially chopped once it has lost logs it was
+        // previously seen to have. A tree discovered already short establishes
+        // that shorter height as its own full size, so untouched trees and
+        // naturally stubby ones are never flagged.
+        if (count > tree.fullLogCount) {
+            tree.fullLogCount = count;
+        }
+        tree.partiallyChopped = !tree.downed && count > 0 && count < tree.fullLogCount;
 
         int desired = base.getY() + BirchConfig.get().treeCenterHeight;
         int targetY = Math.max(lowest, Math.min(highest, desired));
@@ -339,27 +410,6 @@ public class TreeRegenTracker {
             tree.target = new BlockPos(base.getX(), targetY, base.getZ());
         }
         return true;
-    }
-
-    /**
-     * Announce trees whose countdown has elapsed. Each tree alerts at most once
-     * per chop, and {@link Notifier} rate-limits the alerts themselves.
-     */
-    private void alertIfReady() {
-        int readyNow = 0;
-
-        for (Tree tree : trees.values()) {
-            if (tree.downed && !tree.alerted && getSecondsUntilRegen(tree) == 0.0) {
-                // Mark regardless of whether the alert is throttled, so a
-                // suppressed alert does not re-fire every tick.
-                tree.alerted = true;
-                readyNow++;
-            }
-        }
-
-        if (readyNow > 0) {
-            Notifier.treeReady(readyNow);
-        }
     }
 
     private void recordMeasurement(Tree tree, double seconds) {
@@ -420,6 +470,35 @@ public class TreeRegenTracker {
     /** True mean across every cycle measured, as opposed to the weighted average. */
     public double getMeanRegenSeconds() {
         return measurementCount > 0 ? totalRegenSeconds / measurementCount : -1.0;
+    }
+
+    /**
+     * How long this particular tree is expected to take. A tree that has been
+     * measured before is timed by its own history rather than the global
+     * average, which keeps each label attached to the truth of its own tree.
+     */
+    public double getExpectedRegenSeconds(Tree tree) {
+        if (tree != null && tree.lastRegenSeconds > 0.0) {
+            return tree.lastRegenSeconds;
+        }
+        return getRegenSeconds();
+    }
+
+    /**
+     * Seconds left for this tree, negative once it is overdue. Renderers want
+     * the raw value; the route wants it clamped, so both exist.
+     */
+    public double getRemainingSeconds(Tree tree) {
+        if (tree == null || !tree.downed) {
+            return Double.NaN;
+        }
+        double elapsed = (System.currentTimeMillis() - tree.downedAt) / 1000.0;
+        return getExpectedRegenSeconds(tree) - elapsed;
+    }
+
+    /** How many trees have actually come back this session. */
+    public int getRegeneratedCount() {
+        return regeneratedCount;
     }
 
     /** Seconds until a specific tree should regrow (0 = due now). */
@@ -486,6 +565,7 @@ public class TreeRegenTracker {
         totalRegenSeconds = 0.0;
         lastMeasurementSeconds = -1.0;
         measurementCount = 0;
+        regeneratedCount = 0;
         lastSweepX = Double.NaN;
     }
 }
