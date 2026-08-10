@@ -51,11 +51,13 @@ public final class RouteRecorder {
             if (recording == null || base == null) {
                 return;
             }
-            if (!recording.points.isEmpty()) {
-                RecordedRoute.Point last = recording.points.get(recording.points.size() - 1);
-                if (last.x == base.getX() && last.y == base.getY() && last.z == base.getZ()) {
-                    return;
-                }
+            // A tree belongs on a loop once. Only the previous point was
+            // checked before, so recording a lap and a half — chopping a tree,
+            // working round, and reaching it again after it regrew — stored it
+            // twice. The route then drew two markers on one tree with a line
+            // running between them.
+            if (recording.contains(base.getX(), base.getY(), base.getZ())) {
+                return;
             }
             recording.points.add(new RecordedRoute.Point(base.getX(), base.getY(), base.getZ()));
             routeName = name;

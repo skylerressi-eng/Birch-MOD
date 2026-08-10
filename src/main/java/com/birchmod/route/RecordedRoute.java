@@ -52,6 +52,66 @@ public final class RecordedRoute {
     }
 
     /**
+     * Trees this close together are the same tree.
+     *
+     * A trunk's base can be re-detected a block off after it regrows, so exact
+     * coordinates are not a reliable identity.
+     */
+    public static final double SAME_TREE_DISTANCE = 2.0;
+
+    /** Whether this loop already visits the tree at these coordinates. */
+    public boolean contains(int x, int y, int z) {
+        if (points == null) {
+            return false;
+        }
+        for (Point point : points) {
+            if (near(point, x, y, z)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean near(Point point, int x, int y, int z) {
+        double dx = point.x - x;
+        double dy = point.y - y;
+        double dz = point.z - z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz) <= SAME_TREE_DISTANCE;
+    }
+
+    /**
+     * Drop repeat visits, keeping the first of each.
+     *
+     * A loop that lists the same tree twice draws two markers on it joined by a
+     * line, which reads as a step in the route when it is the same stop. Routes
+     * recorded before this was enforced still carry the repeats, so they are
+     * repaired when loaded rather than left to misbehave.
+     *
+     * @return how many repeats were removed
+     */
+    public int dedupe() {
+        if (points == null || points.isEmpty()) {
+            return 0;
+        }
+        List<Point> unique = new ArrayList<>(points.size());
+        for (Point point : points) {
+            boolean seen = false;
+            for (Point kept : unique) {
+                if (near(kept, point.x, point.y, point.z)) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                unique.add(point);
+            }
+        }
+        int removed = points.size() - unique.size();
+        points = unique;
+        return removed;
+    }
+
+    /**
      * Total walking distance for one full lap, including the hop from the last
      * tree back to the first — a foraging route is a loop, not a line.
      */

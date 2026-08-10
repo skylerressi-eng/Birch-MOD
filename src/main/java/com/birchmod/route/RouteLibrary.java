@@ -38,6 +38,9 @@ import net.fabricmc.loader.api.FabricLoader;
  */
 public final class RouteLibrary {
 
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("BirchOptimizer");
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "birchoptimizer-routes.json";
 
@@ -222,6 +225,11 @@ public final class RouteLibrary {
             }
             if (route.points == null) {
                 route.points = new ArrayList<>();
+            }
+            int repeats = route.dedupe();
+            if (repeats > 0) {
+                LOGGER.info("Route '{}' listed {} tree(s) more than once; repeats removed.",
+                        route.name, repeats);
             }
         }
     }
