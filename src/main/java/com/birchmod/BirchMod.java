@@ -19,12 +19,16 @@ import com.birchmod.util.Guard;
 import com.birchmod.util.SkyblockDetector;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.resources.Identifier;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Birch Optimizer — Fabric client mod for Hypixel Skyblock on Minecraft 26.1.2.
@@ -40,7 +44,15 @@ import net.minecraft.resources.Identifier;
 public class BirchMod implements ClientModInitializer {
 
     public static final String MOD_ID = "birchoptimizer";
-    public static final String VERSION = "1.2.2";
+    /**
+     * Read from the jar's own metadata rather than a constant, so what the mod
+     * reports can never drift from the build actually loaded.
+     */
+    public static String version() {
+        return FabricLoader.getInstance().getModContainer(MOD_ID)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("unknown");
+    }
 
     public static BirchTracker tracker;
     public static TreeRegenTracker regenTracker;
@@ -49,8 +61,12 @@ public class BirchMod implements ClientModInitializer {
     public static LeaderboardManager leaderboard;
     public static RouteBuilder routeBuilder;
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("BirchOptimizer");
+
     @Override
     public void onInitializeClient() {
+        LOGGER.info("Birch Optimizer {} starting for Minecraft 26.1.2", version());
+
         BirchConfig.load();
         SessionStats.load();
 

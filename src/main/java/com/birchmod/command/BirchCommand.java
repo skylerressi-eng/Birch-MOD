@@ -280,7 +280,7 @@ public final class BirchCommand {
     /** Report which components have thrown — the first thing to check on a bug. */
     private static void diagnostics(FabricClientCommandSource source) {
         header(source);
-        feedback(source, "§7Version: §f" + BirchMod.VERSION + " §7for MC §f26.1.2 §8(no mixins)");
+        feedback(source, "§7Version: §f" + BirchMod.version() + " §7for MC §f26.1.2 §8(no mixins)");
         feedback(source, "§7Safe mode: " + onOff(BirchConfig.get().safeMode));
 
         String[] features = {

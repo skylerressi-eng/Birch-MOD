@@ -182,7 +182,21 @@ public class TracerRenderer {
         ny /= length;
         nz /= length;
 
+        // Validate before touching the buffer. A vertex that is started but not
+        // finished poisons the shared buffer, and Minecraft then dies flushing
+        // it at the end of the pass — far away from here and impossible to
+        // catch. Nothing may go wrong between the first addVertex and the last
+        // setter, so every check happens first.
+        if (!Float.isFinite(x1) || !Float.isFinite(y1) || !Float.isFinite(z1)
+                || !Float.isFinite(x2) || !Float.isFinite(y2) || !Float.isFinite(z2)
+                || !Float.isFinite(nx) || !Float.isFinite(ny) || !Float.isFinite(nz)) {
+            return;
+        }
+
         float width = (float) BirchConfig.get().lineWidth;
+        if (!Float.isFinite(width) || width <= 0.0f) {
+            width = 2.0f;
+        }
         PoseStack.Pose pose = poseStack.last();
 
         lines.addVertex(matrix, x1, y1, z1)
