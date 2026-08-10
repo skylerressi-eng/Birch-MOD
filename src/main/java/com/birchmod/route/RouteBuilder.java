@@ -8,7 +8,10 @@ import java.util.Map;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.TreeRegenTracker;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -44,8 +47,15 @@ public final class RouteBuilder {
      */
     private static final double SKIP_WAIT_SECONDS = 8.0;
 
-    /** A committed stop is dropped only once the player is this close to it. */
-    private static final double REACHED_DISTANCE = 3.5;
+    /** How far up a trunk to look for real wood. */
+    private static final int TRUNK_PROBE_HEIGHT = 12;
+
+    /**
+     * Beyond this from the held target, the player has gone somewhere else
+     * entirely — warped, or walked off the island — and picking the loop back
+     * up where they are beats marching them back to where they left off.
+     */
+    private static final double REJOIN_DISTANCE = 96.0;
 
     /** One stop on the route. The tree is null for a recorded stop not yet seen. */
     public record Stop(TreeRegenTracker.Tree tree, BlockPos center, double etaSeconds, int order) {
@@ -62,6 +72,10 @@ public final class RouteBuilder {
 
     /** Bases of the stops already committed to, in order. */
     private final List<BlockPos> committed = new ArrayList<>();
+
+    /** Where round the recorded loop we are, held until there is cause to move. */
+    private int loopIndex = -1;
+    private String loopRouteName = null;
 
     public RouteBuilder(TreeRegenTracker regenTracker) {
         this.regenTracker = regenTracker;
@@ -93,53 +107,106 @@ public final class RouteBuilder {
         BirchConfig config = BirchConfig.get();
         Map<BlockPos, TreeRegenTracker.Tree> byBase = indexTrees();
 
-        List<Stop> result = new ArrayList<>();
         int size = recorded.size();
-        int start = recorded.nearestIndex(playerPos.x, playerPos.y, playerPos.z);
 
+        // Pick up at the nearest stop only when starting out or after switching
+        // routes. Re-deriving it from proximity on every recompute is what made
+        // the route shuffle under the player: walking between two stops flipped
+        // which one was "nearest" and the whole loop re-based around it.
+        boolean needsRejoin = loopIndex < 0
+                || loopIndex >= size
+                || !recorded.name.equals(loopRouteName)
+                || playerPos.distanceTo(Vec3.atCenterOf(baseOf(recorded, loopIndex))) > REJOIN_DISTANCE;
+
+        if (needsRejoin) {
+            loopIndex = recorded.nearestIndex(playerPos.x, playerPos.y, playerPos.z);
+            loopRouteName = recorded.name;
+        }
+
+        // Advance only for a reason: the stop was felled, or it will not be
+        // back soon enough to be worth standing there. Position never advances
+        // the loop on its own.
+        for (int guard = 0; guard < size; guard++) {
+            TreeRegenTracker.Tree tree = byBase.get(baseOf(recorded, loopIndex));
+            if (tree == null || !tree.isDowned()) {
+                break;
+            }
+            if (regenTracker.getSecondsUntilRegen(tree) <= SKIP_WAIT_SECONDS) {
+                break;
+            }
+            loopIndex = (loopIndex + 1) % size;
+        }
+
+        List<Stop> result = new ArrayList<>();
         Vec3 cursor = playerPos;
         double clock = 0.0;
         int order = 1;
 
-        // One full lap at most, so a loop where everything is regrowing still
-        // terminates instead of spinning.
         for (int step = 0; step < size && result.size() < config.routeLength; step++) {
-            RecordedRoute.Point point = recorded.points.get((start + step) % size);
-            BlockPos base = new BlockPos(point.x, point.y, point.z);
+            int index = (loopIndex + step) % size;
+            BlockPos base = baseOf(recorded, index);
             TreeRegenTracker.Tree tree = byBase.get(base);
-
-            BlockPos center = tree != null
-                    ? tree.getTarget()
-                    : base.above(config.treeCenterHeight);
+            BlockPos center = resolveCenter(base, tree);
 
             double travel = cursor.distanceTo(Vec3.atCenterOf(center)) / RouteLibrary.walkSpeed();
             double readyAt = readySecondsFromNow(tree);
             double arrival = Math.max(clock + travel, readyAt);
 
-            // Standing around for a stop that is far from ready wastes more time
-            // than carrying on and catching it next lap.
-            boolean wouldWait = arrival - (clock + travel) > SKIP_WAIT_SECONDS;
-            if (wouldWait && result.size() + (size - step - 1) >= 1) {
-                continue;
-            }
-
             result.add(new Stop(tree, center, Math.max(0.0, arrival), order++));
             cursor = Vec3.atCenterOf(center);
             clock = arrival;
         }
+        return result;
+    }
 
-        // Everything is regrowing: show the loop in order anyway so the path is
-        // still visible while waiting.
-        if (result.isEmpty()) {
-            for (int step = 0; step < size && result.size() < config.routeLength; step++) {
-                RecordedRoute.Point point = recorded.points.get((start + step) % size);
-                BlockPos base = new BlockPos(point.x, point.y, point.z);
-                TreeRegenTracker.Tree tree = byBase.get(base);
-                BlockPos center = tree != null ? tree.getTarget() : base.above(config.treeCenterHeight);
-                result.add(new Stop(tree, center, readySecondsFromNow(tree), result.size() + 1));
+    private BlockPos baseOf(RecordedRoute recorded, int index) {
+        RecordedRoute.Point point = recorded.points.get(index % recorded.size());
+        return new BlockPos(point.x, point.y, point.z);
+    }
+
+    /**
+     * Where to put the marker for a stop.
+     *
+     * A tracked tree already knows which of its blocks is wood. An untracked
+     * one — a stop further round the loop than the tracker sweeps — used to get
+     * a blind offset above its base, which lands in the canopy as often as not
+     * and is why markers kept settling on leaves. Probing the trunk for a real
+     * log costs a handful of block lookups for the few stops actually drawn.
+     */
+    private BlockPos resolveCenter(BlockPos base, TreeRegenTracker.Tree tree) {
+        if (tree != null) {
+            return tree.getTarget();
+        }
+
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.level == null
+                || !client.level.hasChunk(base.getX() >> 4, base.getZ() >> 4)) {
+            // Cannot check, so stay on the trunk base rather than guess upward.
+            return base;
+        }
+
+        int desired = base.getY() + BirchConfig.get().treeCenterHeight;
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        int bestY = Integer.MIN_VALUE;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (int dy = 0; dy < TRUNK_PROBE_HEIGHT; dy++) {
+            int y = base.getY() + dy;
+            cursor.set(base.getX(), y, base.getZ());
+            BlockState state = client.level.getBlockState(cursor);
+            if (!state.is(Blocks.BIRCH_LOG) && !state.is(Blocks.BIRCH_WOOD)) {
+                continue;
+            }
+            int distance = Math.abs(y - desired);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestY = y;
             }
         }
-        return result;
+
+        return bestY == Integer.MIN_VALUE
+                ? base
+                : new BlockPos(base.getX(), bestY, base.getZ());
     }
 
     private Map<BlockPos, TreeRegenTracker.Tree> indexTrees() {
@@ -169,14 +236,11 @@ public final class RouteBuilder {
             if (tree == null) {
                 continue;
             }
-            // Its wood is gone, so there is nothing left to chop there. Release
-            // it immediately rather than holding the player at an empty stump:
-            // the tree may well be felled from several blocks away, and waiting
-            // to be stood next to it is what made the route stall.
+            // Felling it is the only reason to move on. Releasing the target
+            // on proximity as well meant the marker jumped to the next tree as
+            // soon as the player walked up to this one, before they had chopped
+            // it — the route advancing on its own.
             if (tree.isDowned()) {
-                continue;
-            }
-            if (i == 0 && playerPos.distanceTo(Vec3.atCenterOf(tree.getTarget())) < REACHED_DISTANCE) {
                 continue;
             }
             ordered.add(tree);
@@ -267,6 +331,8 @@ public final class RouteBuilder {
     /** Forget the committed order, e.g. after switching routes. */
     public void resetCommitment() {
         committed.clear();
+        loopIndex = -1;
+        loopRouteName = null;
         lastComputed = 0L;
     }
 }
