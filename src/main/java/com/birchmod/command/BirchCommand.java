@@ -325,6 +325,7 @@ public final class BirchCommand {
         feedback(source, "§f/timer mode §7— toggle floating tree timers");
         feedback(source, "§f/route §7— show the planned route");
         feedback(source, "§f/route <true|false> §7— toggle route overlay");
+        feedback(source, "§f/route path <true|false> §7— whole path vs next tree only");
         feedback(source, "§f/route tracers <true|false> §7· §f/route chain <true|false>");
         feedback(source, "§f/route length <1-16> §7· §f/route center <0-12>");
         feedback(source, "§f/birch safemode <true|false> §7— disable in-world rendering");

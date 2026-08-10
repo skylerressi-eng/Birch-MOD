@@ -146,6 +146,15 @@ public final class RouteCommand {
                             feedback(ctx.getSource(), "§7Tracers: " + onOff(BirchConfig.get().tracersEnabled));
                             return 1;
                         })))
+                .then(ClientCommands.literal("path")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().showFullPath = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            feedback(ctx.getSource(), BirchConfig.get().showFullPath
+                                    ? "§7Showing the §fwhole path§7."
+                                    : "§7Showing §fonly the next tree§7.");
+                            return 1;
+                        })))
                 .then(ClientCommands.literal("chain")
                         .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
                             BirchConfig.get().chainTracers = BoolArgumentType.getBool(ctx, "enabled");
@@ -210,7 +219,7 @@ public final class RouteCommand {
         BirchConfig config = BirchConfig.get();
         feedback(source, "§7Overlay: " + onOff(config.routeEnabled)
                 + " §7Tracers: " + onOff(config.tracersEnabled)
-                + " §7Chain: " + onOff(config.chainTracers));
+                + " §7Full path: " + onOff(config.showFullPath));
 
         for (RouteBuilder.Stop stop : routeBuilder.getRoute()) {
             BlockPos center = stop.center();

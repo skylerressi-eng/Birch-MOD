@@ -123,10 +123,16 @@ public class TracerRenderer {
             return;
         }
 
-        List<RouteBuilder.Stop> route = routeBuilder.getRoute();
-        if (route.isEmpty()) {
+        List<RouteBuilder.Stop> planned = routeBuilder.getRoute();
+        if (planned.isEmpty()) {
             return;
         }
+
+        // Draw only the tree being headed to unless the full path is asked for.
+        // The planner still looks further ahead; this is purely what is shown.
+        List<RouteBuilder.Stop> route = config.showFullPath
+                ? planned
+                : planned.subList(0, 1);
 
         Camera camera = client.gameRenderer.getMainCamera();
         Vec3 cam = camera.position();
@@ -206,7 +212,8 @@ public class TracerRenderer {
         drawLine(lines, matrix, poseStack, start, points[0], cam,
                 rgb[0], rgb[1], rgb[2], 255, width);
 
-        if (!config.chainTracers) {
+        // Chaining only means anything when the full path is being drawn.
+        if (!config.showFullPath || !config.chainTracers) {
             return;
         }
         // Chain onward: each tracer pings off the previous tree's block.
