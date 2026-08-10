@@ -31,13 +31,23 @@ public class CollectionRankTracker {
     private static final Pattern TITLE_PATTERN =
             Pattern.compile("(?i)(collection|leaderboard|top )");
 
-    /** "#12", "#1,234", "12.", "1,234th" — the position on a leaderboard line. */
+    /**
+     * A leaderboard row's leading position: "#12 Notch", "12. Notch",
+     * "1,234th Notch". Anchored to the start of the line so a trailing
+     * collection <em>amount</em> can never be mistaken for a rank.
+     */
     private static final Pattern RANK_PATTERN =
-            Pattern.compile("(?:#\\s*|\\brank\\s*|\\bposition\\s*:?\\s*)?(\\d{1,3}(?:,\\d{3})*|\\d+)\\s*(?:st|nd|rd|th|\\.)?");
+            Pattern.compile("^\\s*#?\\s*(\\d{1,3}(?:,\\d{3})*|\\d{1,7})\\s*(?:st|nd|rd|th)?[.)\\-:]?\\s+\\S");
 
-    /** Explicit "your rank" style lines are the most reliable signal. */
+    /**
+     * Explicit "your rank" lines. The rank word is required — without it,
+     * "Your Birch Collection: 1,234,567" would report the amount as a rank.
+     */
     private static final Pattern SELF_RANK_PATTERN =
-            Pattern.compile("(?i)(?:your|you are)\\D{0,20}?(\\d{1,3}(?:,\\d{3})*|\\d+)");
+            Pattern.compile("(?i)\\b(?:your|you)\\b[^\\d]{0,24}?\\b(?:rank|position|place)\\b[^\\d]{0,12}?#?\\s*(\\d{1,3}(?:,\\d{3})*|\\d{1,7})");
+
+    /** Ranks beyond this are certainly a parsed collection amount, not a place. */
+    private static final int MAX_PLAUSIBLE_RANK = 10_000_000;
 
     /** Strip section-sign colour codes. */
     private static final Pattern COLOR_CODES = Pattern.compile("(?i)§[0-9A-FK-OR]");
@@ -122,7 +132,7 @@ public class CollectionRankTracker {
     private Integer parse(String raw) {
         try {
             int value = Integer.parseInt(raw.replace(",", ""));
-            return value > 0 ? value : null;
+            return (value > 0 && value <= MAX_PLAUSIBLE_RANK) ? value : null;
         } catch (NumberFormatException e) {
             return null;
         }

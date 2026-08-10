@@ -38,15 +38,15 @@ public final class SessionStats {
     private static long lastSave = 0L;
 
     // ---- Session-only counters ----
-    private static long sessionBirch = 0L;
-    private static long sessionTrees = 0L;
-    private static double sessionCoins = 0.0;
-    private static double sessionBestRate = 0.0;
-    private static long sessionStart = System.currentTimeMillis();
+    private static volatile long sessionBirch = 0L;
+    private static volatile long sessionTrees = 0L;
+    private static volatile double sessionCoins = 0.0;
+    private static volatile double sessionBestRate = 0.0;
+    private static volatile long sessionStart = System.currentTimeMillis();
 
     /** Wall-clock time credited only while actively gathering. */
-    private static long activeMs = 0L;
-    private static long lastActivityAt = 0L;
+    private static volatile long activeMs = 0L;
+    private static volatile long lastActivityAt = 0L;
 
     /** A gap longer than this counts as idle, not gathering. */
     private static final long ACTIVITY_TIMEOUT_MS = 60_000L;

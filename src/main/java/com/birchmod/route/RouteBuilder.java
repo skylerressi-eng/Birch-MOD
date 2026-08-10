@@ -39,7 +39,8 @@ public final class RouteBuilder {
 
     private final TreeRegenTracker regenTracker;
 
-    private List<Stop> route = new ArrayList<>();
+    /** Built on the client thread, read by the render thread. */
+    private volatile List<Stop> route = List.of();
     private long lastComputed = 0L;
 
     public RouteBuilder(TreeRegenTracker regenTracker) {
@@ -53,7 +54,7 @@ public final class RouteBuilder {
             return;
         }
         lastComputed = now;
-        route = compute(playerPos);
+        route = List.copyOf(compute(playerPos));
     }
 
     private List<Stop> compute(Vec3 playerPos) {
@@ -130,7 +131,8 @@ public final class RouteBuilder {
 
     /** The stop you should head to right now, or null if the route is empty. */
     public Stop getNext() {
-        return route.isEmpty() ? null : route.get(0);
+        List<Stop> snapshot = route;
+        return snapshot.isEmpty() ? null : snapshot.get(0);
     }
 
     public boolean isEmpty() {

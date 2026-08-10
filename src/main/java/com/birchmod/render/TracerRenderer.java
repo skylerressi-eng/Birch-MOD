@@ -127,7 +127,7 @@ public class TracerRenderer {
         }
     }
 
-    /** A single world-space line segment, in camera-relative coordinates. */
+    /** A world-space line segment between two absolute points. */
     private void drawLine(VertexConsumer lines,
                           Matrix4f matrix,
                           PoseStack poseStack,
@@ -135,13 +135,25 @@ public class TracerRenderer {
                           Vec3 to,
                           Vec3 cam,
                           int r, int g, int b, int a) {
-        float x1 = (float) (from.x - cam.x);
-        float y1 = (float) (from.y - cam.y);
-        float z1 = (float) (from.z - cam.z);
-        float x2 = (float) (to.x - cam.x);
-        float y2 = (float) (to.y - cam.y);
-        float z2 = (float) (to.z - cam.z);
+        segment(lines, matrix, poseStack,
+                (float) (from.x - cam.x), (float) (from.y - cam.y), (float) (from.z - cam.z),
+                (float) (to.x - cam.x), (float) (to.y - cam.y), (float) (to.z - cam.z),
+                r, g, b, a);
+    }
 
+    /**
+     * Emit one line segment in camera-relative coordinates.
+     *
+     * Takes primitives rather than Vec3 because this runs twelve times per
+     * highlighted tree per frame; allocating vectors here churned the heap for
+     * no benefit.
+     */
+    private void segment(VertexConsumer lines,
+                         Matrix4f matrix,
+                         PoseStack poseStack,
+                         float x1, float y1, float z1,
+                         float x2, float y2, float z2,
+                         int r, int g, int b, int a) {
         // The LINES render type uses the normal as the segment direction.
         float nx = x2 - x1;
         float ny = y2 - y1;
@@ -198,7 +210,10 @@ public class TracerRenderer {
                       double x1, double y1, double z1,
                       double x2, double y2, double z2,
                       int r, int g, int b, int a) {
-        drawLine(lines, matrix, poseStack,
-                new Vec3(x1, y1, z1), new Vec3(x2, y2, z2), Vec3.ZERO, r, g, b, a);
+        // Box corners are already camera-relative.
+        segment(lines, matrix, poseStack,
+                (float) x1, (float) y1, (float) z1,
+                (float) x2, (float) y2, (float) z2,
+                r, g, b, a);
     }
 }

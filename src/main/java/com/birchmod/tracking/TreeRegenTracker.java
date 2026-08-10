@@ -1,10 +1,14 @@
 package com.birchmod.tracking;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.birchmod.config.BirchConfig;
 import com.birchmod.stats.SessionStats;
@@ -12,6 +16,7 @@ import com.birchmod.util.Notifier;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -45,6 +50,9 @@ public class TreeRegenTracker {
     /** Trunk search volume above a base log. */
     private static final int TRUNK_RADIUS = 2;
     private static final int TRUNK_HEIGHT = 12;
+
+    /** Upper bound on flood-fill work per tree. */
+    private static final int MAX_TREE_BLOCKS = 256;
 
     /** Ignore implausible measurements (block replaced by something else). */
     private static final double MAX_PLAUSIBLE_REGEN_SECONDS = 900.0;
@@ -86,7 +94,12 @@ public class TreeRegenTracker {
         }
     }
 
-    private final Map<BlockPos, Tree> trees = new HashMap<>();
+    /**
+     * Mutated on the client thread, iterated by the HUD and world renderers on
+     * the render thread, so iteration must be weakly consistent rather than
+     * fail-fast.
+     */
+    private final Map<BlockPos, Tree> trees = new ConcurrentHashMap<>();
 
     // ---- Aggregate measurements, accumulated automatically ----
     private double averageRegenSeconds = -1.0;
@@ -149,15 +162,33 @@ public class TreeRegenTracker {
                     }
 
                     BlockPos base = cursor.immutable();
-                    if (!trees.containsKey(base)) {
-                        if (trees.size() >= MAX_TREES) {
-                            return;
-                        }
-                        trees.put(base, new Tree(base, countLogs(client, base)));
+                    if (trees.containsKey(base) || overlapsTrackedTree(base)) {
+                        continue;
                     }
+                    if (trees.size() >= MAX_TREES) {
+                        return;
+                    }
+                    trees.put(base, new Tree(base, countLogs(client, base)));
                 }
             }
         }
+    }
+
+    /**
+     * True if this candidate base sits inside an already-tracked tree's trunk
+     * envelope. A branch whose lowest log happens to have air beneath it would
+     * otherwise register the same tree a second time.
+     */
+    private boolean overlapsTrackedTree(BlockPos candidate) {
+        for (BlockPos base : trees.keySet()) {
+            if (Math.abs(candidate.getX() - base.getX()) <= TRUNK_RADIUS
+                    && Math.abs(candidate.getZ() - base.getZ()) <= TRUNK_RADIUS
+                    && candidate.getY() >= base.getY()
+                    && candidate.getY() < base.getY() + TRUNK_HEIGHT) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Detect full-chop (count -> 0) and regrowth (0 -> count) transitions. */
@@ -244,18 +275,47 @@ public class TreeRegenTracker {
         }
     }
 
-    /** Count birch logs in the trunk volume above a base position. */
+    /**
+     * Count the birch logs belonging to one tree, by flood-filling from its
+     * base through face-adjacent logs.
+     *
+     * A fixed box does not work in a dense grove: neighbouring trunks fall
+     * inside each other's volume, so chopping one tree never drives its
+     * neighbour's count to zero and the neighbour never registers as downed.
+     * Connectivity keeps each trunk separate, because trees standing apart are
+     * not face-adjacent even when their boxes overlap.
+     */
     private int countLogs(Minecraft client, BlockPos base) {
+        if (!isBirchAt(client, base)) {
+            return 0;
+        }
+
+        Set<BlockPos> visited = new HashSet<>();
+        Deque<BlockPos> queue = new ArrayDeque<>();
+        visited.add(base);
+        queue.add(base);
         int count = 0;
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
-            for (int dx = -TRUNK_RADIUS; dx <= TRUNK_RADIUS; dx++) {
-                for (int dz = -TRUNK_RADIUS; dz <= TRUNK_RADIUS; dz++) {
-                    cursor.set(base.getX() + dx, base.getY() + dy, base.getZ() + dz);
-                    if (isBirchAt(client, cursor)) {
-                        count++;
-                    }
+
+        while (!queue.isEmpty() && count < MAX_TREE_BLOCKS) {
+            BlockPos current = queue.poll();
+            count++;
+
+            for (Direction direction : Direction.values()) {
+                BlockPos next = current.relative(direction);
+
+                // Stay within the trunk envelope so a canopy bridging two trees
+                // cannot merge them into one.
+                if (Math.abs(next.getX() - base.getX()) > TRUNK_RADIUS
+                        || Math.abs(next.getZ() - base.getZ()) > TRUNK_RADIUS
+                        || next.getY() < base.getY()
+                        || next.getY() >= base.getY() + TRUNK_HEIGHT) {
+                    continue;
                 }
+                if (visited.contains(next) || !isBirchAt(client, next)) {
+                    continue;
+                }
+                visited.add(next);
+                queue.add(next);
             }
         }
         return count;
