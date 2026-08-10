@@ -39,9 +39,19 @@ public final class RouteBuilder {
 
     private final TreeRegenTracker regenTracker;
 
+    /**
+     * How much better a rival must be before the first stop is abandoned.
+     * Without this the greedy pick flips between near-equal trees every
+     * recompute and the tracer visibly jitters between them.
+     */
+    private static final double SWITCH_MARGIN_SECONDS = 1.5;
+
     /** Built on the client thread, read by the render thread. */
     private volatile List<Stop> route = List.of();
     private long lastComputed = 0L;
+
+    /** The destination we committed to, kept until it is reached or invalid. */
+    private BlockPos committedTarget = null;
 
     public RouteBuilder(TreeRegenTracker regenTracker) {
         this.regenTracker = regenTracker;
@@ -96,7 +106,29 @@ public final class RouteBuilder {
                 break;
             }
 
+            // First stop only: stay with the committed destination unless a
+            // rival is meaningfully better, so the route reads as one path
+            // rather than flicking between neighbours.
+            if (result.isEmpty() && committedTarget != null) {
+                for (TreeRegenTracker.Tree tree : candidates) {
+                    if (!tree.base.equals(committedTarget)) {
+                        continue;
+                    }
+                    double distance = cursor.distanceTo(Vec3.atCenterOf(centerOf(tree)));
+                    double arrival = Math.max(clock + distance / TRAVEL_BLOCKS_PER_SECOND,
+                            readySecondsFromNow(tree));
+                    if (arrival - clock <= bestCost + SWITCH_MARGIN_SECONDS) {
+                        best = tree;
+                        bestArrival = arrival;
+                    }
+                    break;
+                }
+            }
+
             BlockPos center = centerOf(best);
+            if (result.isEmpty()) {
+                committedTarget = best.base;
+            }
             result.add(new Stop(best, center, Math.max(0.0, bestArrival), order++));
             candidates.remove(best);
             cursor = Vec3.atCenterOf(center);
@@ -116,11 +148,12 @@ public final class RouteBuilder {
     }
 
     /**
-     * The block a tracer should point at: the middle of the trunk, so the
-     * marker sits inside the tree rather than at its feet.
+     * The block a tracer points at. The tracker resolves this to an actual log
+     * of the trunk, so the marker lands on wood instead of a fixed offset that
+     * can float above a short tree or sit below its first log.
      */
     public static BlockPos centerOf(TreeRegenTracker.Tree tree) {
-        return tree.base.above(BirchConfig.get().treeCenterHeight);
+        return tree.getTarget();
     }
 
     // ---- Queries ----

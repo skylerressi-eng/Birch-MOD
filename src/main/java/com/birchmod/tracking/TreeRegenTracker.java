@@ -81,9 +81,22 @@ public class TreeRegenTracker {
         int regenCount;
         double lastRegenSeconds = -1.0;
 
+        /**
+         * The block to highlight: an actual log of this trunk, not a fixed
+         * offset from the base. Written on the client thread, read by renderers.
+         */
+        volatile BlockPos target;
+
         Tree(BlockPos base, boolean standing) {
             this.base = base;
             this.standing = standing;
+            this.target = base;
+        }
+
+        /** Always a real block position; falls back to the base when downed. */
+        public BlockPos getTarget() {
+            BlockPos current = target;
+            return current != null ? current : base;
         }
 
         public boolean isDowned() {
@@ -260,7 +273,7 @@ public class TreeRegenTracker {
                 continue;
             }
 
-            boolean standing = isTrunkStanding(client, tree.base);
+            boolean standing = probeTrunk(client, tree);
 
             if (!tree.downed && tree.standing && !standing) {
                 // Fully downed: this is when the clock starts.
@@ -285,20 +298,47 @@ public class TreeRegenTracker {
     }
 
     /**
-     * Whether any log remains in this tree's trunk column.
+     * Scan this tree's trunk column, recording whether any log remains and
+     * where the highlight should sit.
      *
-     * Exits on the first log found, so the common case — a standing tree — is a
-     * single block lookup, and a downed tree costs at most {@link #TRUNK_HEIGHT}.
-     * Nothing is allocated.
+     * The target is clamped into the span of logs that actually exist, so the
+     * marker can never float in the air above a short trunk or sit below the
+     * first log — it is always on wood while the tree is standing. A downed
+     * tree keeps its base, which is where it will regrow.
+     *
+     * Costs at most {@link #TRUNK_HEIGHT} lookups and allocates nothing beyond
+     * the single BlockPos handed to the renderers when the target moves.
      */
-    private boolean isTrunkStanding(Minecraft client, BlockPos base) {
+    private boolean probeTrunk(Minecraft client, Tree tree) {
+        BlockPos base = tree.base;
+        int lowest = Integer.MAX_VALUE;
+        int highest = Integer.MIN_VALUE;
+
         for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
-            cursor.set(base.getX(), base.getY() + dy, base.getZ());
+            int y = base.getY() + dy;
+            cursor.set(base.getX(), y, base.getZ());
             if (isBirchAt(client, cursor)) {
-                return true;
+                if (y < lowest) {
+                    lowest = y;
+                }
+                highest = y;
             }
         }
-        return false;
+
+        if (highest == Integer.MIN_VALUE) {
+            tree.target = base;
+            return false;
+        }
+
+        int desired = base.getY() + BirchConfig.get().treeCenterHeight;
+        int targetY = Math.max(lowest, Math.min(highest, desired));
+
+        BlockPos current = tree.target;
+        if (current == null || current.getY() != targetY
+                || current.getX() != base.getX() || current.getZ() != base.getZ()) {
+            tree.target = new BlockPos(base.getX(), targetY, base.getZ());
+        }
+        return true;
     }
 
     /**

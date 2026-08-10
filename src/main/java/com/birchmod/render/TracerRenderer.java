@@ -1,5 +1,6 @@
 package com.birchmod.render;
 
+import java.text.DecimalFormat;
 import java.util.List;
 
 import com.birchmod.config.BirchConfig;
@@ -11,6 +12,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -23,31 +25,40 @@ import org.joml.Matrix4f;
  * Draws the foraging route in the world:
  *
  * <ul>
- *   <li>a green highlight box around the central block of each routed tree,</li>
+ *   <li>a green highlight on the block to mine — an actual log of the trunk,</li>
  *   <li>a tracer from the player to the next tree, and</li>
  *   <li>chained tracers hopping from that block to each subsequent stop.</li>
  * </ul>
  *
- * Tracers originate at the highlighted centre block, so the line and the marker
- * always agree on where the tree is.
+ * Tracers originate at the highlighted block, so line and marker always agree
+ * on where the tree is.
  */
 public class TracerRenderer {
 
-    /** Normalised RGBA components for the line colours. */
-    private static final int NEXT_R = 0x55, NEXT_G = 0xFF, NEXT_B = 0x55; // green
-    private static final int CHAIN_R = 0x40, CHAIN_G = 0xC0, CHAIN_B = 0xFF; // blue
-    private static final int WAIT_R = 0xFF, WAIT_G = 0xAA, WAIT_B = 0x00; // amber
+    private static final DecimalFormat SEC_FMT = new DecimalFormat("#0");
 
-    private static final float BOX_PADDING = 0.02f;
+    /** RGB components for the line and fill colours. */
+    private static final int NEXT_R = 0x40, NEXT_G = 0xFF, NEXT_B = 0x40;   // green
+    private static final int CHAIN_R = 0x40, CHAIN_G = 0xC0, CHAIN_B = 0xFF; // blue
+    private static final int WAIT_R = 0xFF, WAIT_G = 0xAA, WAIT_B = 0x00;    // amber
+
+    private static final float BOX_PADDING = 0.005f;
+
+    /** Alpha of the solid block fill. Low enough to still see the wood. */
+    private static final int FILL_ALPHA = 90;
+
+    private static final float TEXT_SCALE = 0.025f;
+    private static final int FULL_BRIGHT = 0xF000F0;
 
     /**
      * Resolved once and reused, so the buffer we write to and the batch we end
-     * are keyed by the same instance. Calling {@code RenderTypes.lines()} twice
-     * risks writing to one buffer and flushing another, which leaves our
-     * vertices for Minecraft to flush later and turns any mistake here into an
-     * exception raised from the middle of its own main pass.
+     * are keyed by the same instance.
      */
     private static final RenderType LINES = RenderTypes.lines();
+    private static final RenderType FILLED = RenderTypes.debugFilledBox();
+
+    private static final VertexWriter LINE_WRITER = new VertexWriter(LINES);
+    private static final VertexWriter FILL_WRITER = new VertexWriter(FILLED);
 
     private final RouteBuilder routeBuilder;
 
@@ -57,7 +68,7 @@ public class TracerRenderer {
 
     public void render(LevelRenderContext context) {
         BirchConfig config = BirchConfig.get();
-        if (!config.routeEnabled) {
+        if (!config.routeEnabled || !LINE_WRITER.isUsable()) {
             return;
         }
 
@@ -75,35 +86,56 @@ public class TracerRenderer {
         Vec3 cam = camera.position();
         PoseStack poseStack = context.poseStack();
         MultiBufferSource.BufferSource buffers = context.bufferSource();
+        Matrix4f matrix = poseStack.last().pose();
+        float width = lineWidth(config);
+
+        // Solid fill first, so the outline drawn after it reads on top.
+        if (config.filledHighlight && FILL_WRITER.supportsFill()) {
+            VertexConsumer fill = buffers.getBuffer(FILLED);
+            for (RouteBuilder.Stop stop : route) {
+                int[] rgb = colourFor(stop);
+                fillBox(fill, matrix, poseStack, stop.center(), cam,
+                        rgb[0], rgb[1], rgb[2], FILL_ALPHA, width);
+            }
+            buffers.endBatch(FILLED);
+        }
+
         VertexConsumer lines = buffers.getBuffer(LINES);
 
-        Matrix4f matrix = poseStack.last().pose();
-
-        // Highlight every routed tree's centre block; the first one is green,
-        // later stops fade to the chain colour so the order reads at a glance.
         for (RouteBuilder.Stop stop : route) {
-            boolean isNext = stop.order() == 1;
-            boolean waiting = stop.etaSeconds() > 0.0 && stop.tree().isDowned();
-
-            int r = isNext ? NEXT_R : CHAIN_R;
-            int g = isNext ? NEXT_G : CHAIN_G;
-            int b = isNext ? NEXT_B : CHAIN_B;
-            if (waiting && isNext) {
-                r = WAIT_R;
-                g = WAIT_G;
-                b = WAIT_B;
-            }
-            int alpha = isNext ? 255 : 140;
-
-            drawBox(lines, matrix, poseStack, stop.center(), cam, r, g, b, alpha);
+            int[] rgb = colourFor(stop);
+            int alpha = stop.order() == 1 ? 255 : 170;
+            drawBox(lines, matrix, poseStack, stop.center(), cam, rgb[0], rgb[1], rgb[2], alpha, width);
         }
 
         if (config.tracersEnabled) {
-            drawTracers(lines, matrix, poseStack, route, client, cam, config);
+            drawTracers(lines, matrix, poseStack, route, client, cam, config, width);
         }
 
         buffers.endBatch(LINES);
+
+        if (config.showRouteLabels) {
+            drawLabels(buffers, poseStack, client, camera, cam, route);
+        }
     }
+
+    /** Green when ready to chop, amber while regrowing, blue for later stops. */
+    private int[] colourFor(RouteBuilder.Stop stop) {
+        boolean waiting = stop.tree().isDowned();
+        if (stop.order() == 1) {
+            return waiting
+                    ? new int[]{WAIT_R, WAIT_G, WAIT_B}
+                    : new int[]{NEXT_R, NEXT_G, NEXT_B};
+        }
+        return new int[]{CHAIN_R, CHAIN_G, CHAIN_B};
+    }
+
+    private float lineWidth(BirchConfig config) {
+        float width = (float) config.lineWidth;
+        return (Float.isFinite(width) && width > 0.0f) ? width : 4.0f;
+    }
+
+    // ---- Tracers ----
 
     private void drawTracers(VertexConsumer lines,
                              Matrix4f matrix,
@@ -111,66 +143,94 @@ public class TracerRenderer {
                              List<RouteBuilder.Stop> route,
                              Minecraft client,
                              Vec3 cam,
-                             BirchConfig config) {
-        // Start the tracer just below eye level so it does not blind the player.
+                             BirchConfig config,
+                             float width) {
+        // Start just below eye level so the line does not sit in the crosshair.
         Vec3 eye = client.player.getEyePosition();
         Vec3 start = new Vec3(eye.x, eye.y - 0.35, eye.z);
 
         RouteBuilder.Stop first = route.get(0);
-        Vec3 firstCenter = Vec3.atCenterOf(first.center());
-
-        boolean waiting = first.etaSeconds() > 0.0 && first.tree().isDowned();
-        int r = waiting ? WAIT_R : NEXT_R;
-        int g = waiting ? WAIT_G : NEXT_G;
-        int b = waiting ? WAIT_B : NEXT_B;
-
-        drawLine(lines, matrix, poseStack, start, firstCenter, cam, r, g, b, 255);
+        int[] rgb = colourFor(first);
+        drawLine(lines, matrix, poseStack, start, Vec3.atCenterOf(first.center()), cam,
+                rgb[0], rgb[1], rgb[2], 255, width);
 
         if (!config.chainTracers) {
             return;
         }
-        // Chain onward: each tracer pings off the previous tree's centre block.
+        // Chain onward: each tracer pings off the previous tree's block.
         for (int i = 0; i < route.size() - 1; i++) {
             Vec3 from = Vec3.atCenterOf(route.get(i).center());
             Vec3 to = Vec3.atCenterOf(route.get(i + 1).center());
-            drawLine(lines, matrix, poseStack, from, to, cam, CHAIN_R, CHAIN_G, CHAIN_B, 120);
+            drawLine(lines, matrix, poseStack, from, to, cam,
+                    CHAIN_R, CHAIN_G, CHAIN_B, 190, width);
         }
     }
 
-    /** A world-space line segment between two absolute points. */
+    // ---- Labels ----
+
+    /** Numbered stops with their wait, so the order of the route is legible. */
+    private void drawLabels(MultiBufferSource.BufferSource buffers,
+                            PoseStack poseStack,
+                            Minecraft client,
+                            Camera camera,
+                            Vec3 cam,
+                            List<RouteBuilder.Stop> route) {
+        Font font = client.font;
+
+        for (RouteBuilder.Stop stop : route) {
+            BlockPos pos = stop.center();
+            double x = pos.getX() + 0.5 - cam.x;
+            double y = pos.getY() + 1.1 - cam.y;
+            double z = pos.getZ() + 0.5 - cam.z;
+
+            String label = stop.etaSeconds() <= 0.5
+                    ? stop.order() + " • READY"
+                    : stop.order() + " • " + SEC_FMT.format(stop.etaSeconds()) + "s";
+
+            int[] rgb = colourFor(stop);
+            int argb = 0xFF000000 | (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+
+            poseStack.pushPose();
+            poseStack.translate(x, y, z);
+            poseStack.mulPose(camera.rotation());
+            poseStack.scale(-TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE);
+
+            font.drawInBatch(label, -font.width(label) / 2.0f, 0.0f, argb, false,
+                    poseStack.last().pose(), buffers, Font.DisplayMode.SEE_THROUGH, 0, FULL_BRIGHT);
+
+            poseStack.popPose();
+        }
+        buffers.endBatch();
+    }
+
+    // ---- Geometry ----
+
     private void drawLine(VertexConsumer lines,
                           Matrix4f matrix,
                           PoseStack poseStack,
                           Vec3 from,
                           Vec3 to,
                           Vec3 cam,
-                          int r, int g, int b, int a) {
+                          int r, int g, int b, int a, float width) {
         segment(lines, matrix, poseStack,
                 (float) (from.x - cam.x), (float) (from.y - cam.y), (float) (from.z - cam.z),
                 (float) (to.x - cam.x), (float) (to.y - cam.y), (float) (to.z - cam.z),
-                r, g, b, a);
+                r, g, b, a, width);
     }
 
     /**
      * Emit one line segment in camera-relative coordinates.
      *
-     * <p>Every element of the vertex format must be written. On 26.1 the lines
-     * pipeline uses {@code POSITION_COLOR_NORMAL_LINE_WIDTH}, so omitting
-     * {@link VertexConsumer#setLineWidth} leaves a partial vertex in the shared
-     * buffer and Minecraft throws {@code Missing elements in vertex: LineWidth}
-     * later, when it flushes the main pass. That failure surfaces far from this
-     * code and cannot be caught here, so the setters must stay complete.
-     *
-     * <p>Takes primitives rather than Vec3 because this runs twelve times per
-     * highlighted tree per frame.
+     * Everything is validated before the first vertex is started: a vertex left
+     * half-written poisons the shared buffer and kills the game when Minecraft
+     * flushes it, far from here and impossible to catch.
      */
     private void segment(VertexConsumer lines,
                          Matrix4f matrix,
                          PoseStack poseStack,
                          float x1, float y1, float z1,
                          float x2, float y2, float z2,
-                         int r, int g, int b, int a) {
-        // The LINES render type uses the normal as the segment direction.
+                         int r, int g, int b, int a, float width) {
         float nx = x2 - x1;
         float ny = y2 - y1;
         float nz = z2 - z1;
@@ -182,31 +242,17 @@ public class TracerRenderer {
         ny /= length;
         nz /= length;
 
-        // Validate before touching the buffer. A vertex that is started but not
-        // finished poisons the shared buffer, and Minecraft then dies flushing
-        // it at the end of the pass — far away from here and impossible to
-        // catch. Nothing may go wrong between the first addVertex and the last
-        // setter, so every check happens first.
-        if (!Float.isFinite(x1) || !Float.isFinite(y1) || !Float.isFinite(z1)
-                || !Float.isFinite(x2) || !Float.isFinite(y2) || !Float.isFinite(z2)
-                || !Float.isFinite(nx) || !Float.isFinite(ny) || !Float.isFinite(nz)) {
+        if (!finite(x1, y1, z1) || !finite(x2, y2, z2) || !finite(nx, ny, nz)) {
             return;
         }
 
-        float width = (float) BirchConfig.get().lineWidth;
-        if (!Float.isFinite(width) || width <= 0.0f) {
-            width = 2.0f;
-        }
         PoseStack.Pose pose = poseStack.last();
+        LINE_WRITER.vertex(lines, matrix, pose, x1, y1, z1, r, g, b, a, nx, ny, nz, width);
+        LINE_WRITER.vertex(lines, matrix, pose, x2, y2, z2, r, g, b, a, nx, ny, nz, width);
+    }
 
-        lines.addVertex(matrix, x1, y1, z1)
-                .setColor(r, g, b, a)
-                .setNormal(pose, nx, ny, nz)
-                .setLineWidth(width);
-        lines.addVertex(matrix, x2, y2, z2)
-                .setColor(r, g, b, a)
-                .setNormal(pose, nx, ny, nz)
-                .setLineWidth(width);
+    private boolean finite(float a, float b, float c) {
+        return Float.isFinite(a) && Float.isFinite(b) && Float.isFinite(c);
     }
 
     /** Wireframe cube around a block, drawn as twelve edges. */
@@ -215,43 +261,88 @@ public class TracerRenderer {
                          PoseStack poseStack,
                          BlockPos pos,
                          Vec3 cam,
-                         int r, int g, int b, int a) {
-        double x0 = pos.getX() - cam.x - BOX_PADDING;
-        double y0 = pos.getY() - cam.y - BOX_PADDING;
-        double z0 = pos.getZ() - cam.z - BOX_PADDING;
-        double x1 = pos.getX() + 1 - cam.x + BOX_PADDING;
-        double y1 = pos.getY() + 1 - cam.y + BOX_PADDING;
-        double z1 = pos.getZ() + 1 - cam.z + BOX_PADDING;
+                         int r, int g, int b, int a, float width) {
+        float x0 = (float) (pos.getX() - cam.x) - BOX_PADDING;
+        float y0 = (float) (pos.getY() - cam.y) - BOX_PADDING;
+        float z0 = (float) (pos.getZ() - cam.z) - BOX_PADDING;
+        float x1 = (float) (pos.getX() + 1 - cam.x) + BOX_PADDING;
+        float y1 = (float) (pos.getY() + 1 - cam.y) + BOX_PADDING;
+        float z1 = (float) (pos.getZ() + 1 - cam.z) + BOX_PADDING;
 
-        // Bottom face
-        edge(lines, matrix, poseStack, x0, y0, z0, x1, y0, z0, r, g, b, a);
-        edge(lines, matrix, poseStack, x1, y0, z0, x1, y0, z1, r, g, b, a);
-        edge(lines, matrix, poseStack, x1, y0, z1, x0, y0, z1, r, g, b, a);
-        edge(lines, matrix, poseStack, x0, y0, z1, x0, y0, z0, r, g, b, a);
-
-        // Top face
-        edge(lines, matrix, poseStack, x0, y1, z0, x1, y1, z0, r, g, b, a);
-        edge(lines, matrix, poseStack, x1, y1, z0, x1, y1, z1, r, g, b, a);
-        edge(lines, matrix, poseStack, x1, y1, z1, x0, y1, z1, r, g, b, a);
-        edge(lines, matrix, poseStack, x0, y1, z1, x0, y1, z0, r, g, b, a);
-
+        // Bottom
+        segment(lines, matrix, poseStack, x0, y0, z0, x1, y0, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z0, x1, y0, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z1, x0, y0, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z1, x0, y0, z0, r, g, b, a, width);
+        // Top
+        segment(lines, matrix, poseStack, x0, y1, z0, x1, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y1, z0, x1, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y1, z1, x0, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y1, z1, x0, y1, z0, r, g, b, a, width);
         // Verticals
-        edge(lines, matrix, poseStack, x0, y0, z0, x0, y1, z0, r, g, b, a);
-        edge(lines, matrix, poseStack, x1, y0, z0, x1, y1, z0, r, g, b, a);
-        edge(lines, matrix, poseStack, x1, y0, z1, x1, y1, z1, r, g, b, a);
-        edge(lines, matrix, poseStack, x0, y0, z1, x0, y1, z1, r, g, b, a);
+        segment(lines, matrix, poseStack, x0, y0, z0, x0, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z0, x1, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z1, x1, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z1, x0, y1, z1, r, g, b, a, width);
     }
 
-    private void edge(VertexConsumer lines,
+    /** Solid translucent cube, so the block to mine reads at a glance. */
+    private void fillBox(VertexConsumer fill,
+                         Matrix4f matrix,
+                         PoseStack poseStack,
+                         BlockPos pos,
+                         Vec3 cam,
+                         int r, int g, int b, int a, float width) {
+        float x0 = (float) (pos.getX() - cam.x);
+        float y0 = (float) (pos.getY() - cam.y);
+        float z0 = (float) (pos.getZ() - cam.z);
+        float x1 = x0 + 1.0f;
+        float y1 = y0 + 1.0f;
+        float z1 = z0 + 1.0f;
+
+        if (!finite(x0, y0, z0) || !finite(x1, y1, z1)) {
+            return;
+        }
+
+        PoseStack.Pose pose = poseStack.last();
+
+        // Down / up
+        face(fill, matrix, pose, x0, y0, z1, x1, y0, z1, x1, y0, z0, x0, y0, z0, 0, -1, 0, r, g, b, a, width);
+        face(fill, matrix, pose, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1, 0, 1, 0, r, g, b, a, width);
+        // North / south
+        face(fill, matrix, pose, x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, -1, r, g, b, a, width);
+        face(fill, matrix, pose, x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, 1, r, g, b, a, width);
+        // West / east
+        face(fill, matrix, pose, x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, -1, 0, 0, r, g, b, a, width);
+        face(fill, matrix, pose, x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, 1, 0, 0, r, g, b, a, width);
+    }
+
+    /**
+     * One face. Quads take the four corners directly; triangle pipelines get the
+     * same corners split into two triangles.
+     */
+    private void face(VertexConsumer fill,
                       Matrix4f matrix,
-                      PoseStack poseStack,
-                      double x1, double y1, double z1,
-                      double x2, double y2, double z2,
-                      int r, int g, int b, int a) {
-        // Box corners are already camera-relative.
-        segment(lines, matrix, poseStack,
-                (float) x1, (float) y1, (float) z1,
-                (float) x2, (float) y2, (float) z2,
-                r, g, b, a);
+                      PoseStack.Pose pose,
+                      float ax, float ay, float az,
+                      float bx, float by, float bz,
+                      float cx, float cy, float cz,
+                      float dx, float dy, float dz,
+                      float nx, float ny, float nz,
+                      int r, int g, int b, int a, float width) {
+        if (FILL_WRITER.isQuads()) {
+            FILL_WRITER.vertex(fill, matrix, pose, ax, ay, az, r, g, b, a, nx, ny, nz, width);
+            FILL_WRITER.vertex(fill, matrix, pose, bx, by, bz, r, g, b, a, nx, ny, nz, width);
+            FILL_WRITER.vertex(fill, matrix, pose, cx, cy, cz, r, g, b, a, nx, ny, nz, width);
+            FILL_WRITER.vertex(fill, matrix, pose, dx, dy, dz, r, g, b, a, nx, ny, nz, width);
+            return;
+        }
+        FILL_WRITER.vertex(fill, matrix, pose, ax, ay, az, r, g, b, a, nx, ny, nz, width);
+        FILL_WRITER.vertex(fill, matrix, pose, bx, by, bz, r, g, b, a, nx, ny, nz, width);
+        FILL_WRITER.vertex(fill, matrix, pose, cx, cy, cz, r, g, b, a, nx, ny, nz, width);
+
+        FILL_WRITER.vertex(fill, matrix, pose, ax, ay, az, r, g, b, a, nx, ny, nz, width);
+        FILL_WRITER.vertex(fill, matrix, pose, cx, cy, cz, r, g, b, a, nx, ny, nz, width);
+        FILL_WRITER.vertex(fill, matrix, pose, dx, dy, dz, r, g, b, a, nx, ny, nz, width);
     }
 }

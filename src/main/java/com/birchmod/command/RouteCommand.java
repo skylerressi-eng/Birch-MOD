@@ -7,6 +7,7 @@ import com.birchmod.route.RouteBuilder;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -66,6 +67,31 @@ public final class RouteCommand {
                                             + BirchConfig.get().routeLength + " stops");
                                     return 1;
                                 })))
+                .then(ClientCommands.literal("width")
+                        .then(ClientCommands.argument("width", DoubleArgumentType.doubleArg(0.5, 10.0))
+                                .executes(ctx -> {
+                                    BirchConfig.get().lineWidth = DoubleArgumentType.getDouble(ctx, "width");
+                                    BirchConfig.save();
+                                    feedback(ctx.getSource(), "§7Line width: §f"
+                                            + SEC_FMT.format(BirchConfig.get().lineWidth));
+                                    return 1;
+                                })))
+                .then(ClientCommands.literal("filled")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().filledHighlight = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            feedback(ctx.getSource(), "§7Filled highlight: "
+                                    + onOff(BirchConfig.get().filledHighlight));
+                            return 1;
+                        })))
+                .then(ClientCommands.literal("labels")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().showRouteLabels = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            feedback(ctx.getSource(), "§7Route labels: "
+                                    + onOff(BirchConfig.get().showRouteLabels));
+                            return 1;
+                        })))
                 .then(ClientCommands.literal("center")
                         .then(ClientCommands.argument("height", IntegerArgumentType.integer(0, 12))
                                 .executes(ctx -> {

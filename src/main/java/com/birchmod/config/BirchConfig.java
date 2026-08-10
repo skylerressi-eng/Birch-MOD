@@ -81,7 +81,11 @@ public final class BirchConfig {
     /** Blocks above the trunk base to treat as the tree's centre. */
     public int treeCenterHeight = 2;
     /** Width of tracer and highlight lines, in pixels. */
-    public double lineWidth = 2.0;
+    public double lineWidth = 4.0;
+    /** Fill the block to mine with translucent colour, not just an outline. */
+    public boolean filledHighlight = true;
+    /** Draw numbered "1 - READY" labels above each routed tree. */
+    public boolean showRouteLabels = true;
 
     // ---- Notifications ----
     public boolean notifyOnReady = true;
