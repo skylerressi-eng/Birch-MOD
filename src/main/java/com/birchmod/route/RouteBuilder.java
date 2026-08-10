@@ -166,10 +166,16 @@ public final class RouteBuilder {
         List<TreeRegenTracker.Tree> ordered = new ArrayList<>();
 
         // Keep previously committed stops that still exist, in their old order.
-        // Drop the leading one once it has been reached, so the route advances.
         for (int i = 0; i < committed.size(); i++) {
             TreeRegenTracker.Tree tree = byBase.get(committed.get(i));
             if (tree == null) {
+                continue;
+            }
+            // Its wood is gone, so there is nothing left to chop there. Release
+            // it immediately rather than holding the player at an empty stump:
+            // the tree may well be felled from several blocks away, and waiting
+            // to be stood next to it is what made the route stall.
+            if (tree.isDowned()) {
                 continue;
             }
             if (i == 0 && playerPos.distanceTo(Vec3.atCenterOf(tree.getTarget())) < REACHED_DISTANCE) {

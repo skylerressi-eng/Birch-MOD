@@ -413,8 +413,25 @@ public class TreeRegenTracker {
         }
         tree.partiallyChopped = !tree.downed && count > 0 && count < tree.fullLogCount;
 
+        // Clamping between the lowest and highest log only guarantees the
+        // target sits in that span, not that it is a log. A trunk with a gap —
+        // leaves poking through, or a partly chopped column — then puts the
+        // marker on a leaf. Pick the nearest position that actually holds wood.
         int desired = base.getY() + BirchConfig.get().treeCenterHeight;
-        int targetY = Math.max(lowest, Math.min(highest, desired));
+        int targetY = highest;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
+            if ((mask & (1 << dy)) == 0) {
+                continue;
+            }
+            int y = base.getY() + dy;
+            int distance = Math.abs(y - desired);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                targetY = y;
+            }
+        }
 
         BlockPos current = tree.target;
         if (current == null || current.getY() != targetY
