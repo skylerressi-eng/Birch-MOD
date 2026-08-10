@@ -6,6 +6,7 @@ import com.birchmod.config.BirchConfig;
 import com.birchmod.route.RecordedRoute;
 import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
+import com.birchmod.route.RouteOptimizer;
 import com.birchmod.route.RouteRecorder;
 import com.birchmod.tracking.TreeRegenTracker;
 
@@ -87,6 +88,11 @@ public final class RouteCommand {
                     feedback(ctx.getSource(), "§7Recording cancelled.");
                     return 1;
                 }))
+                .then(ClientCommands.literal("compile")
+                        .executes(ctx -> compile(ctx.getSource(), routeBuilder, regenTracker, "optimized"))
+                        .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx ->
+                                compile(ctx.getSource(), routeBuilder, regenTracker,
+                                        StringArgumentType.getString(ctx, "name")))))
                 .then(ClientCommands.literal("list").executes(ctx -> {
                     list(ctx.getSource(), regenTracker.getRegenSeconds());
                     return 1;
@@ -217,6 +223,60 @@ public final class RouteCommand {
         }
     }
 
+
+
+    /**
+     * Merge every saved route into one optimised loop and activate it.
+     *
+     * The compiled route is saved under its own name, so the recordings it was
+     * built from stay untouched and can be re-compiled later as more are added.
+     */
+    private static int compile(FabricClientCommandSource source,
+                               RouteBuilder routeBuilder,
+                               TreeRegenTracker regenTracker,
+                               String name) {
+        var sources = RouteLibrary.all();
+        // Never fold a previous compile back into the next one.
+        sources.removeIf(route -> route.name.equalsIgnoreCase(name));
+
+        if (sources.isEmpty()) {
+            feedback(source, "§cNothing to compile. Record routes with §f/route start <name>");
+            return 0;
+        }
+
+        double regen = regenTracker.getRegenSeconds();
+        RouteOptimizer.Result result = RouteOptimizer.compile(sources, regen, name);
+        if (result == null) {
+            feedback(source, "§cNot enough distinct trees across those routes (need "
+                    + RouteLibrary.MIN_STOPS + ").");
+            return 0;
+        }
+
+        RouteLibrary.save(result.route());
+        RouteLibrary.setActive(name);
+        routeBuilder.resetCommitment();
+
+        feedback(source, "§6§lBirch Optimizer §7— compiled §f" + name);
+        feedback(source, "§7  Merged §f" + result.sourceRoutes() + "§7 routes into §f"
+                + result.uniqueTrees() + "§7 distinct trees");
+        if (result.droppedOneOffs() > 0) {
+            feedback(source, "§7  Dropped §f" + result.droppedOneOffs()
+                    + "§7 one-off detour(s) you only took once");
+        }
+        feedback(source, "§7  Kept §f" + result.chosen()
+                + "§7 agreed tree(s), reordered to shorten the loop");
+        feedback(source, "§7  Lap: §f" + SEC_FMT.format(result.lapSeconds())
+                + "s §7vs regen §f" + SEC_FMT.format(regen) + "s");
+
+        if (result.lapSeconds() + 0.5 < regen) {
+            feedback(source, "§e  Lap still shorter than regen — record more trees to fill the wait.");
+        } else {
+            feedback(source, "§a  Lap covers the regen: trees are ready as you reach them.");
+        }
+        feedback(source, "§7  Throughput: §f" + SEC_FMT.format(result.treesPerMinute()) + " trees/min");
+        feedback(source, "§aNow following it. §8/route auto to go back to automatic planning.");
+        return 1;
+    }
 
     /** All saved routes with their expected throughput, best first. */
     private static void list(FabricClientCommandSource source, double regenSeconds) {
