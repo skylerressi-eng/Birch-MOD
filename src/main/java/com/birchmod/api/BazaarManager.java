@@ -137,8 +137,8 @@ public class BazaarManager {
         double best = -1.0;
         synchronized (quotes) {
             for (Quote quote : quotes.values()) {
-                Double logsPerUnit = RELATED_PRODUCTS.get(quote.productId());
-                if (logsPerUnit == null || logsPerUnit <= 0.0) {
+                double logsPerUnit = logsPerUnit(quote.productId());
+                if (logsPerUnit <= 0.0) {
                     continue;
                 }
                 // Selling means taking the insta-sell price.
@@ -157,8 +157,8 @@ public class BazaarManager {
         String bestId = null;
         synchronized (quotes) {
             for (Quote quote : quotes.values()) {
-                Double logsPerUnit = RELATED_PRODUCTS.get(quote.productId());
-                if (logsPerUnit == null || logsPerUnit <= 0.0) {
+                double logsPerUnit = logsPerUnit(quote.productId());
+                if (logsPerUnit <= 0.0) {
                     continue;
                 }
                 double perLog = quote.sellPrice() / logsPerUnit;
@@ -169,6 +169,23 @@ public class BazaarManager {
             }
         }
         return bestId;
+    }
+
+    /**
+     * How many birch logs one unit of a product is worth.
+     *
+     * A product the player configured that is not one of the known relatives
+     * was priced on the HUD but silently skipped when working out coins per
+     * hour, so the two disagreed. An unknown product counts as one log per
+     * unit, which is right for any raw log and at least keeps the figures
+     * consistent with what is being displayed.
+     */
+    private double logsPerUnit(String productId) {
+        Double known = RELATED_PRODUCTS.get(productId);
+        if (known != null) {
+            return known;
+        }
+        return productId != null && productId.equals(BirchConfig.get().bazaarProductId) ? 1.0 : 0.0;
     }
 
     /** Apply the configured Bazaar tax to a gross amount. */

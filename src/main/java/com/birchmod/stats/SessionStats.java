@@ -9,6 +9,9 @@ import java.nio.file.Path;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
@@ -36,6 +39,17 @@ public final class SessionStats {
 
     private static Lifetime lifetime = new Lifetime();
     private static long lastSave = 0L;
+
+    /**
+     * Stats are written off the client thread. The periodic save fired from the
+     * tracker every thirty seconds, and a synchronous disk write there is a
+     * stutter in the middle of play for something nobody is waiting on.
+     */
+    private static final ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "BirchOptimizer-Stats");
+        t.setDaemon(true);
+        return t;
+    });
 
     // ---- Session-only counters ----
     private static volatile long sessionBirch = 0L;
@@ -167,22 +181,41 @@ public final class SessionStats {
         resetSession();
     }
 
-    /** Save at most once per {@link #SAVE_INTERVAL_MS}. */
+    /** Save at most once per {@link #SAVE_INTERVAL_MS}, off the client thread. */
     public static void saveThrottled() {
         long now = System.currentTimeMillis();
         if (now - lastSave < SAVE_INTERVAL_MS) {
             return;
         }
         lastSave = now;
-        save();
+        // Snapshot here, serialise there: the writer must not read fields the
+        // client thread is still updating.
+        Lifetime snapshot = snapshot();
+        IO.execute(() -> write(snapshot));
     }
 
+    /** Save immediately. Used on shutdown, where the write has to finish. */
     public static void save() {
+        write(snapshot());
+    }
+
+    private static Lifetime snapshot() {
+        Lifetime copy = new Lifetime();
+        Lifetime source = lifetime;
+        copy.birchCollected = source.birchCollected;
+        copy.treesChopped = source.treesChopped;
+        copy.coinsEarned = source.coinsEarned;
+        copy.playtimeMs = source.playtimeMs;
+        copy.bestBirchPerHour = source.bestBirchPerHour;
+        return copy;
+    }
+
+    private static void write(Lifetime data) {
         Path file = path();
         try {
             Files.createDirectories(file.getParent());
             try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                GSON.toJson(lifetime, writer);
+                GSON.toJson(data, writer);
             }
         } catch (Exception ignored) {
             // Stats are not worth crashing the client over.

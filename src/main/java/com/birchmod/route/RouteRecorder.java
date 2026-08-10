@@ -13,24 +13,29 @@ import net.minecraft.core.BlockPos;
  */
 public final class RouteRecorder {
 
+    /**
+     * Commands run on one thread and chop detection on another, so every access
+     * is synchronized. Without it a chop landing mid-{@code stop()} can be
+     * appended to a route that has already been handed off and saved.
+     */
     private String name = null;
     private RecordedRoute recording = null;
 
     /** Begin a new recording, discarding any in progress. */
-    public void start(String routeName) {
+    public synchronized void start(String routeName) {
         this.name = routeName;
         this.recording = new RecordedRoute(routeName);
     }
 
-    public boolean isRecording() {
+    public synchronized boolean isRecording() {
         return recording != null;
     }
 
-    public String getName() {
+    public synchronized String getName() {
         return name;
     }
 
-    public int getCount() {
+    public synchronized int getCount() {
         return recording == null ? 0 : recording.size();
     }
 
@@ -38,7 +43,7 @@ public final class RouteRecorder {
      * Called when a tree is fully chopped. Consecutive repeats of the same tree
      * are collapsed so re-felling one stump does not stack duplicates.
      */
-    public void onTreeChopped(BlockPos base) {
+    public synchronized void onTreeChopped(BlockPos base) {
         if (recording == null || base == null) {
             return;
         }
@@ -57,7 +62,7 @@ public final class RouteRecorder {
      *
      * @return the saved route, or null if it had too few stops to be useful
      */
-    public RecordedRoute stop() {
+    public synchronized RecordedRoute stop() {
         RecordedRoute finished = recording;
         recording = null;
         name = null;
@@ -70,7 +75,7 @@ public final class RouteRecorder {
     }
 
     /** Abandon the recording without saving. */
-    public void cancel() {
+    public synchronized void cancel() {
         recording = null;
         name = null;
     }

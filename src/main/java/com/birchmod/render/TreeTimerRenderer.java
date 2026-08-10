@@ -64,7 +64,7 @@ public class TreeTimerRenderer {
 
     public void render(LevelRenderContext context) {
         BirchConfig config = BirchConfig.get();
-        if (!config.regenTimerEnabled || !config.worldTimersEnabled) {
+        if (!config.regenTimerEnabled) {
             return;
         }
 
@@ -82,6 +82,10 @@ public class TreeTimerRenderer {
         double maxRangeSq = config.worldTimerRange * config.worldTimerRange;
 
         drawLeftoverLogs(context, client, cameraPos, poseStack, buffers, maxRangeSq, config);
+
+        if (!config.worldTimersEnabled) {
+            return;
+        }
 
         var downed = regenTracker.getDownedTrees();
         if (downed.isEmpty()) {

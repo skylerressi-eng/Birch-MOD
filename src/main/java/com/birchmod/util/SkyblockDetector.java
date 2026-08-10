@@ -19,8 +19,9 @@ public final class SkyblockDetector {
 
     private static final long CHECK_INTERVAL_MS = 2_000L;
 
-    private static boolean onHypixel = false;
-    private static boolean inSkyblock = false;
+    // Written on the client thread, read by the HUD while rendering.
+    private static volatile boolean onHypixel = false;
+    private static volatile boolean inSkyblock = false;
     private static long lastCheck = 0L;
 
     private SkyblockDetector() {

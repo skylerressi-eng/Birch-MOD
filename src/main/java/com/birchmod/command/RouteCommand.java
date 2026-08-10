@@ -288,9 +288,7 @@ public final class RouteCommand {
         }
         String active = RouteLibrary.getActiveName();
 
-        routes.sort((a, b) -> Double.compare(
-                RouteLibrary.score(b, regenSeconds).treesPerMinute(),
-                RouteLibrary.score(a, regenSeconds).treesPerMinute()));
+        routes.sort(RouteLibrary.ranking(regenSeconds));
 
         for (RecordedRoute route : routes) {
             RouteLibrary.Score score = RouteLibrary.score(route, regenSeconds);

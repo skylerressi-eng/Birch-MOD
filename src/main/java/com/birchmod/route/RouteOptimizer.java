@@ -148,6 +148,14 @@ public final class RouteOptimizer {
                 bestLap = lap;
                 bestCycle = cycle;
             }
+
+            // Once the lap runs well past the regen, every further tree adds
+            // more walking than it can pay back, so there is nothing left to
+            // find. Stopping here keeps a large library from hitching the
+            // client thread while the command runs.
+            if (lap > regenSeconds * 1.5 && lap > 0.0) {
+                break;
+            }
         }
 
         if (bestTour == null) {

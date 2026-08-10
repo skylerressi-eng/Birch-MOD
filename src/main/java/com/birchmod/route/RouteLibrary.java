@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -72,17 +73,35 @@ public final class RouteLibrary {
         return new Score(route.name, stops, distance, lap, cycle, perMinute);
     }
 
+    /**
+     * Order routes best-first.
+     *
+     * Throughput alone leaves ties: once regen caps the cycle, a tight loop and
+     * a sprawling one with the same number of stops score identically, even
+     * though the sprawling one spends every spare second walking and leaves no
+     * margin when you misjudge a swing. Equal throughput therefore prefers the
+     * shorter lap.
+     */
+    public static Comparator<RecordedRoute> ranking(double regenSeconds) {
+        return (a, b) -> {
+            Score sa = score(a, regenSeconds);
+            Score sb = score(b, regenSeconds);
+            if (Math.abs(sa.treesPerMinute() - sb.treesPerMinute()) > 1.0e-6) {
+                return Double.compare(sb.treesPerMinute(), sa.treesPerMinute());
+            }
+            return Double.compare(sa.lapSeconds(), sb.lapSeconds());
+        };
+    }
+
     /** The saved route with the highest expected throughput. */
     public static RecordedRoute best(double regenSeconds) {
         RecordedRoute best = null;
-        double bestScore = -1.0;
+        Comparator<RecordedRoute> ranking = ranking(regenSeconds);
         for (RecordedRoute route : store.routes.values()) {
             if (route.size() < MIN_STOPS) {
                 continue;
             }
-            double value = score(route, regenSeconds).treesPerMinute();
-            if (value > bestScore) {
-                bestScore = value;
+            if (best == null || ranking.compare(route, best) < 0) {
                 best = route;
             }
         }
