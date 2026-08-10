@@ -16,6 +16,7 @@ import com.birchmod.route.RouteRecorder;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
+import com.birchmod.tracking.MovementTracker;
 import com.birchmod.tracking.TreeRegenTracker;
 import com.birchmod.util.Guard;
 import com.birchmod.util.SkyblockDetector;
@@ -63,6 +64,7 @@ public class BirchMod implements ClientModInitializer {
     public static LeaderboardManager leaderboard;
     public static RouteBuilder routeBuilder;
     public static RouteRecorder routeRecorder;
+    public static MovementTracker movementTracker;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("BirchOptimizer");
 
@@ -81,6 +83,7 @@ public class BirchMod implements ClientModInitializer {
         leaderboard = new LeaderboardManager();
         routeBuilder = new RouteBuilder(regenTracker);
         routeRecorder = new RouteRecorder();
+        movementTracker = new MovementTracker();
         regenTracker.setChopListener(base -> routeRecorder.onTreeChopped(base));
 
         // Both API managers poll on their own 10-minute schedule.
@@ -96,6 +99,7 @@ public class BirchMod implements ClientModInitializer {
             Guard.run("birch-tracker", () -> tracker.tick(client));
             Guard.run("regen-tracker", () -> regenTracker.tick(client));
             Guard.run("collection-rank", () -> collectionRank.tick(client));
+            Guard.run("movement", () -> movementTracker.tick(client));
             Guard.run("route-builder", () -> {
                 if (client.player != null) {
                     routeBuilder.update(client.player.position());

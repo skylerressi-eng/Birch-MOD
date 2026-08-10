@@ -41,8 +41,26 @@ public final class RouteLibrary {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "birchoptimizer-routes.json";
 
-    /** Rough Skyblock travel speed in blocks/second. */
-    public static final double WALK_BLOCKS_PER_SECOND = 7.0;
+    /** Fallback travel speed until enough movement has been observed. */
+    public static final double DEFAULT_WALK_BLOCKS_PER_SECOND = 7.0;
+
+    /** Samples needed before the measured speed is trusted over the default. */
+    private static final long MIN_WALK_SAMPLES = 40L;
+
+    /**
+     * How fast the player actually travels.
+     *
+     * Measured rather than assumed: a Skyblock speed stat moves you several
+     * times faster than vanilla sprinting, and every ETA, skip decision and
+     * route score is computed from this number.
+     */
+    public static double walkSpeed() {
+        double measured = com.birchmod.stats.SessionStats.getMeasuredWalkSpeed();
+        if (measured > 0.0 && com.birchmod.stats.SessionStats.getWalkSamples() >= MIN_WALK_SAMPLES) {
+            return measured;
+        }
+        return DEFAULT_WALK_BLOCKS_PER_SECOND;
+    }
 
     /** A recorded loop needs at least this many stops to be worth saving. */
     public static final int MIN_STOPS = 3;
@@ -66,7 +84,7 @@ public final class RouteLibrary {
     public static Score score(RecordedRoute route, double regenSeconds) {
         int stops = route.size();
         double distance = route.loopDistance();
-        double lap = distance / WALK_BLOCKS_PER_SECOND;
+        double lap = distance / walkSpeed();
         // You cannot lap faster than the trees come back.
         double cycle = Math.max(lap, Math.max(regenSeconds, 0.001));
         double perMinute = stops / cycle * 60.0;

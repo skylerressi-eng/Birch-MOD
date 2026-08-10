@@ -46,6 +46,14 @@ public final class SessionStats {
          */
         public double measuredRegenSeconds = -1.0;
         public long regenSamples = 0L;
+
+        /**
+         * How fast the player actually travels, in blocks per second. Every
+         * arrival estimate and route score depends on this; assuming a constant
+         * made all of them wrong for anyone with a Skyblock speed stat.
+         */
+        public double measuredWalkSpeed = -1.0;
+        public long walkSamples = 0L;
     }
 
     private static Lifetime lifetime = new Lifetime();
@@ -115,8 +123,13 @@ public final class SessionStats {
     public static void recordTreeChopped() {
         sessionTrees++;
         lifetime.treesChopped++;
+        long now = System.currentTimeMillis();
         synchronized (recentChops) {
-            recentChops.addLast(System.currentTimeMillis());
+            // Trim on write as well as on read. Trimming only in the getter
+            // meant the window grew without bound whenever nothing asked for
+            // the rate, which is most of the time.
+            trimLocked(now);
+            recentChops.addLast(now);
         }
         markActive();
     }
@@ -135,6 +148,39 @@ public final class SessionStats {
         double current = lifetime.measuredRegenSeconds;
         lifetime.measuredRegenSeconds = current <= 0.0 ? seconds : (current * 0.8) + (seconds * 0.2);
         lifetime.regenSamples++;
+    }
+
+    /** Drop chops that have aged out. Caller must hold the deque's lock. */
+    private static void trimLocked(long now) {
+        while (!recentChops.isEmpty() && now - recentChops.peekFirst() > RATE_WINDOW_MS) {
+            recentChops.pollFirst();
+        }
+    }
+
+    /**
+     * Fold one travel-speed observation into the persisted average.
+     *
+     * Weighted gently, because individual samples are noisy — a corner taken
+     * tight, a moment spent lining up a swing — while the underlying speed
+     * changes only when gear does.
+     */
+    public static void recordWalkSample(double blocksPerSecond) {
+        if (blocksPerSecond <= 0.0 || !Double.isFinite(blocksPerSecond)) {
+            return;
+        }
+        double current = lifetime.measuredWalkSpeed;
+        lifetime.measuredWalkSpeed = current <= 0.0
+                ? blocksPerSecond
+                : (current * 0.95) + (blocksPerSecond * 0.05);
+        lifetime.walkSamples++;
+    }
+
+    public static double getMeasuredWalkSpeed() {
+        return lifetime.measuredWalkSpeed;
+    }
+
+    public static long getWalkSamples() {
+        return lifetime.walkSamples;
     }
 
     public static double getPersistedRegenSeconds() {
@@ -158,9 +204,7 @@ public final class SessionStats {
         long oldest;
 
         synchronized (recentChops) {
-            while (!recentChops.isEmpty() && now - recentChops.peekFirst() > RATE_WINDOW_MS) {
-                recentChops.pollFirst();
-            }
+            trimLocked(now);
             count = recentChops.size();
             oldest = recentChops.isEmpty() ? now : recentChops.peekFirst();
         }
@@ -187,6 +231,11 @@ public final class SessionStats {
         }
         if (lifetime.treesChopped > 0) {
             lifetime.treesChopped--;
+        }
+        // The rate window has to forget it too, or a rejected chop still shows
+        // up as output that never happened.
+        synchronized (recentChops) {
+            recentChops.pollLast();
         }
     }
 
@@ -311,6 +360,8 @@ public final class SessionStats {
         copy.bestBirchPerHour = source.bestBirchPerHour;
         copy.measuredRegenSeconds = source.measuredRegenSeconds;
         copy.regenSamples = source.regenSamples;
+        copy.measuredWalkSpeed = source.measuredWalkSpeed;
+        copy.walkSamples = source.walkSamples;
         return copy;
     }
 

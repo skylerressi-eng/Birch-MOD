@@ -138,7 +138,7 @@ public final class RouteOptimizer {
             }
 
             List<RecordedRoute.Point> tour = twoOpt(nearestNeighbourTour(subset));
-            double lap = tourLength(tour) / RouteLibrary.WALK_BLOCKS_PER_SECOND;
+            double lap = tourLength(tour) / RouteLibrary.walkSpeed();
             double cycle = Math.max(lap, Math.max(regenSeconds, 0.001));
             double score = k / cycle * 60.0;
 

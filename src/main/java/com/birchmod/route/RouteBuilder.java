@@ -35,8 +35,6 @@ import net.minecraft.world.phys.Vec3;
  */
 public final class RouteBuilder {
 
-    /** Rough Skyblock travel speed in blocks/second, used to compare with regen. */
-    private static final double TRAVEL_BLOCKS_PER_SECOND = RouteLibrary.WALK_BLOCKS_PER_SECOND;
 
     private static final long RECOMPUTE_INTERVAL_MS = 400L;
 
@@ -114,7 +112,7 @@ public final class RouteBuilder {
                     ? tree.getTarget()
                     : base.above(config.treeCenterHeight);
 
-            double travel = cursor.distanceTo(Vec3.atCenterOf(center)) / TRAVEL_BLOCKS_PER_SECOND;
+            double travel = cursor.distanceTo(Vec3.atCenterOf(center)) / RouteLibrary.walkSpeed();
             double readyAt = readySecondsFromNow(tree);
             double arrival = Math.max(clock + travel, readyAt);
 
@@ -198,7 +196,7 @@ public final class RouteBuilder {
 
             for (TreeRegenTracker.Tree tree : remaining) {
                 double travel = cursor.distanceTo(Vec3.atCenterOf(tree.getTarget()))
-                        / TRAVEL_BLOCKS_PER_SECOND;
+                        / RouteLibrary.walkSpeed();
                 double cost = Math.max(travel, readySecondsFromNow(tree));
                 if (cost < bestCost) {
                     bestCost = cost;
@@ -222,7 +220,7 @@ public final class RouteBuilder {
 
         for (TreeRegenTracker.Tree tree : ordered) {
             BlockPos center = tree.getTarget();
-            double travel = walker.distanceTo(Vec3.atCenterOf(center)) / TRAVEL_BLOCKS_PER_SECOND;
+            double travel = walker.distanceTo(Vec3.atCenterOf(center)) / RouteLibrary.walkSpeed();
             double arrival = Math.max(clock + travel, readySecondsFromNow(tree));
 
             result.add(new Stop(tree, center, Math.max(0.0, arrival), order++));

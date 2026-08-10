@@ -46,7 +46,7 @@ public final class RouteCommand {
                               TreeRegenTracker regenTracker) {
         dispatcher.register(ClientCommands.literal("route")
                 .executes(ctx -> {
-                    show(ctx.getSource(), routeBuilder);
+                    show(ctx.getSource(), routeBuilder, regenTracker);
                     return 1;
                 })
                 .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
@@ -209,7 +209,9 @@ public final class RouteCommand {
                                 }))));
     }
 
-    private static void show(FabricClientCommandSource source, RouteBuilder routeBuilder) {
+    private static void show(FabricClientCommandSource source,
+                             RouteBuilder routeBuilder,
+                             TreeRegenTracker regenTracker) {
         feedback(source, "§6§lBirch Optimizer §7— route");
 
         if (routeBuilder.isEmpty()) {
@@ -222,7 +224,7 @@ public final class RouteCommand {
                 + " §7Tracers: " + onOff(config.tracersEnabled)
                 + " §7Full path: " + onOff(config.showFullPath));
 
-        performance(source, regenSecondsOf(routeBuilder));
+        performance(source, regenTracker.getRegenSeconds());
 
         for (RouteBuilder.Stop stop : routeBuilder.getRoute()) {
             BlockPos center = stop.center();
@@ -346,6 +348,7 @@ public final class RouteCommand {
             return;
         }
 
+        speedNote(source);
         RouteLibrary.Score predicted = RouteLibrary.score(active, regenSeconds);
         if (actual <= 0.0) {
             feedback(source, "§7Following §f" + active.name + "§7, predicted §f"
@@ -367,10 +370,17 @@ public final class RouteCommand {
         }
     }
 
-    private static double regenSecondsOf(RouteBuilder routeBuilder) {
-        return com.birchmod.BirchMod.regenTracker != null
-                ? com.birchmod.BirchMod.regenTracker.getRegenSeconds()
-                : 60.0;
+    /** Show the travel speed the estimates are built on, and where it came from. */
+    private static void speedNote(FabricClientCommandSource source) {
+        double speed = RouteLibrary.walkSpeed();
+        long samples = SessionStats.getWalkSamples();
+        boolean measured = SessionStats.getMeasuredWalkSpeed() > 0.0 && speed
+                != RouteLibrary.DEFAULT_WALK_BLOCKS_PER_SECOND;
+
+        feedback(source, "§7Travel speed: §f" + SEC_FMT.format(speed) + "§7 blocks/s "
+                + (measured
+                ? "§8(measured from " + samples + " samples)"
+                : "§8(default — still measuring, " + samples + " samples so far)"));
     }
 
     private static String onOff(boolean value) {

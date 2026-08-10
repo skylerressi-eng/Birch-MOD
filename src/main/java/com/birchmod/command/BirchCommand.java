@@ -216,6 +216,9 @@ public final class BirchCommand {
 
         feedback(source, "§7Trees tracked: §f" + regenTracker.getTrackedCount()
                 + " §7(downed: §f" + regenTracker.getDownedTrees().size() + "§7)");
+        feedback(source, "§7Travel speed: §f" + DEC_FMT.format(
+                com.birchmod.route.RouteLibrary.walkSpeed()) + "§7 blocks/s §8("
+                + SessionStats.getWalkSamples() + " samples)");
         feedback(source, "§7Skyblock detected: " + onOff(SkyblockDetector.isInSkyblock()));
         feedback(source, "§8Run /birch help for all commands.");
     }
