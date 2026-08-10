@@ -169,6 +169,13 @@ public class TreeRegenTracker {
     private double lastMeasurementSeconds = -1.0;
     private int regeneratedCount = 0;
 
+    /** Notified when a tree is fully chopped, so routes can be recorded. */
+    private java.util.function.Consumer<BlockPos> chopListener = null;
+
+    public void setChopListener(java.util.function.Consumer<BlockPos> listener) {
+        this.chopListener = listener;
+    }
+
     private int updateCounter = 0;
     private int discoverCounter = 0;
     private long lastSweepAt = 0L;
@@ -318,6 +325,11 @@ public class TreeRegenTracker {
                 tree.downed = true;
                 tree.downedAt = now;
                 SessionStats.recordTreeChopped();
+
+                java.util.function.Consumer<BlockPos> listener = chopListener;
+                if (listener != null) {
+                    listener.accept(tree.base);
+                }
             } else if (tree.downed && standing) {
                 long downFor = now - tree.downedAt;
                 if (downFor < MIN_DOWNED_MS) {

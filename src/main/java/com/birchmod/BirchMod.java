@@ -11,6 +11,8 @@ import com.birchmod.input.Keybinds;
 import com.birchmod.render.TracerRenderer;
 import com.birchmod.render.TreeTimerRenderer;
 import com.birchmod.route.RouteBuilder;
+import com.birchmod.route.RouteLibrary;
+import com.birchmod.route.RouteRecorder;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
@@ -60,6 +62,7 @@ public class BirchMod implements ClientModInitializer {
     public static BazaarManager bazaar;
     public static LeaderboardManager leaderboard;
     public static RouteBuilder routeBuilder;
+    public static RouteRecorder routeRecorder;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("BirchOptimizer");
 
@@ -69,6 +72,7 @@ public class BirchMod implements ClientModInitializer {
 
         BirchConfig.load();
         SessionStats.load();
+        RouteLibrary.load();
 
         tracker = new BirchTracker();
         regenTracker = new TreeRegenTracker();
@@ -76,6 +80,8 @@ public class BirchMod implements ClientModInitializer {
         bazaar = new BazaarManager();
         leaderboard = new LeaderboardManager();
         routeBuilder = new RouteBuilder(regenTracker);
+        routeRecorder = new RouteRecorder();
+        regenTracker.setChopListener(base -> routeRecorder.onTreeChopped(base));
 
         // Both API managers poll on their own 10-minute schedule.
         bazaar.start();
@@ -125,7 +131,7 @@ public class BirchMod implements ClientModInitializer {
 
         TimerCommand.register(regenTracker);
         BirchCommand.register(tracker, regenTracker, collectionRank, bazaar, leaderboard);
-        RouteCommand.register(routeBuilder);
+        RouteCommand.register(routeBuilder, routeRecorder, regenTracker);
     }
 
     /** Clear all session-scoped counters. Shared by the keybind and command. */

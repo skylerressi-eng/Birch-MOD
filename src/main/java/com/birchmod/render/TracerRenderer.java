@@ -60,10 +60,56 @@ public class TracerRenderer {
     private static final VertexWriter LINE_WRITER = new VertexWriter(LINES);
     private static final VertexWriter FILL_WRITER = new VertexWriter(FILLED);
 
+    /**
+     * How quickly a smoothed point catches up to its target, per frame at 60fps.
+     * Low enough to absorb a route reshuffle, high enough not to lag behind you.
+     */
+    private static final double SMOOTHING = 0.25;
+
+    /** Snap rather than glide when the jump is this large — a different tree. */
+    private static final double SNAP_DISTANCE = 24.0;
+
     private final RouteBuilder routeBuilder;
+
+    /** Rendered positions, eased toward the route's actual positions. */
+    private Vec3[] smoothed = new Vec3[0];
+    private long lastFrameNanos = 0L;
 
     public TracerRenderer(RouteBuilder routeBuilder) {
         this.routeBuilder = routeBuilder;
+    }
+
+    /**
+     * Ease the drawn stop positions toward where the route says they are.
+     *
+     * The route is rebuilt several times a second and its stops can move — a
+     * tree is chopped, the order shifts, a target climbs the trunk. Drawing the
+     * raw values makes the lines jump on those boundaries; easing them turns
+     * each change into a short glide. Frame-rate independent, so it looks the
+     * same at 30fps and 200.
+     */
+    private Vec3[] smoothPositions(List<RouteBuilder.Stop> route) {
+        long now = System.nanoTime();
+        double deltaSeconds = lastFrameNanos == 0L ? 1.0 / 60.0 : (now - lastFrameNanos) / 1.0e9;
+        lastFrameNanos = now;
+        deltaSeconds = Math.max(0.001, Math.min(0.25, deltaSeconds));
+
+        // Exponential smoothing, expressed so the rate is independent of fps.
+        double alpha = 1.0 - Math.pow(1.0 - SMOOTHING, deltaSeconds * 60.0);
+
+        if (smoothed.length != route.size()) {
+            smoothed = new Vec3[route.size()];
+        }
+        for (int i = 0; i < route.size(); i++) {
+            Vec3 target = Vec3.atCenterOf(route.get(i).center());
+            Vec3 current = smoothed[i];
+            if (current == null || current.distanceTo(target) > SNAP_DISTANCE) {
+                smoothed[i] = target;
+            } else {
+                smoothed[i] = current.add(target.subtract(current).scale(alpha));
+            }
+        }
+        return smoothed;
     }
 
     public void render(LevelRenderContext context) {
@@ -88,6 +134,7 @@ public class TracerRenderer {
         MultiBufferSource.BufferSource buffers = context.bufferSource();
         Matrix4f matrix = poseStack.last().pose();
         float width = lineWidth(config);
+        Vec3[] points = smoothPositions(route);
 
         // Solid fill first, so the outline drawn after it reads on top.
         if (config.filledHighlight && FILL_WRITER.supportsFill()) {
@@ -109,7 +156,7 @@ public class TracerRenderer {
         }
 
         if (config.tracersEnabled) {
-            drawTracers(lines, matrix, poseStack, route, client, cam, config, width);
+            drawTracers(lines, matrix, poseStack, route, points, client, cam, config, width, context);
         }
 
         buffers.endBatch(LINES);
@@ -121,7 +168,7 @@ public class TracerRenderer {
 
     /** Green when ready to chop, amber while regrowing, blue for later stops. */
     private int[] colourFor(RouteBuilder.Stop stop) {
-        boolean waiting = stop.tree().isDowned();
+        boolean waiting = stop.isWaiting();
         if (stop.order() == 1) {
             return waiting
                     ? new int[]{WAIT_R, WAIT_G, WAIT_B}
@@ -141,28 +188,39 @@ public class TracerRenderer {
                              Matrix4f matrix,
                              PoseStack poseStack,
                              List<RouteBuilder.Stop> route,
+                             Vec3[] points,
                              Minecraft client,
                              Vec3 cam,
                              BirchConfig config,
-                             float width) {
+                             float width,
+                             LevelRenderContext context) {
+        // The eye position must be sampled at the same partial tick the camera
+        // was. Using the raw tick position against an interpolated camera makes
+        // the line's origin wobble every single frame.
+        float partial = partialTick(context);
+        Vec3 eye = client.player.getEyePosition(partial);
         // Start just below eye level so the line does not sit in the crosshair.
-        Vec3 eye = client.player.getEyePosition();
         Vec3 start = new Vec3(eye.x, eye.y - 0.35, eye.z);
 
-        RouteBuilder.Stop first = route.get(0);
-        int[] rgb = colourFor(first);
-        drawLine(lines, matrix, poseStack, start, Vec3.atCenterOf(first.center()), cam,
+        int[] rgb = colourFor(route.get(0));
+        drawLine(lines, matrix, poseStack, start, points[0], cam,
                 rgb[0], rgb[1], rgb[2], 255, width);
 
         if (!config.chainTracers) {
             return;
         }
         // Chain onward: each tracer pings off the previous tree's block.
-        for (int i = 0; i < route.size() - 1; i++) {
-            Vec3 from = Vec3.atCenterOf(route.get(i).center());
-            Vec3 to = Vec3.atCenterOf(route.get(i + 1).center());
-            drawLine(lines, matrix, poseStack, from, to, cam,
+        for (int i = 0; i < points.length - 1; i++) {
+            drawLine(lines, matrix, poseStack, points[i], points[i + 1], cam,
                     CHAIN_R, CHAIN_G, CHAIN_B, 190, width);
+        }
+    }
+
+    private float partialTick(LevelRenderContext context) {
+        try {
+            return Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        } catch (Throwable ignored) {
+            return 1.0f;
         }
     }
 
