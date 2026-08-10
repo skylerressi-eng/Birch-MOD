@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
@@ -39,6 +40,15 @@ public class TracerRenderer {
 
     private static final float BOX_PADDING = 0.02f;
 
+    /**
+     * Resolved once and reused, so the buffer we write to and the batch we end
+     * are keyed by the same instance. Calling {@code RenderTypes.lines()} twice
+     * risks writing to one buffer and flushing another, which leaves our
+     * vertices for Minecraft to flush later and turns any mistake here into an
+     * exception raised from the middle of its own main pass.
+     */
+    private static final RenderType LINES = RenderTypes.lines();
+
     private final RouteBuilder routeBuilder;
 
     public TracerRenderer(RouteBuilder routeBuilder) {
@@ -65,7 +75,7 @@ public class TracerRenderer {
         Vec3 cam = camera.position();
         PoseStack poseStack = context.poseStack();
         MultiBufferSource.BufferSource buffers = context.bufferSource();
-        VertexConsumer lines = buffers.getBuffer(RenderTypes.lines());
+        VertexConsumer lines = buffers.getBuffer(LINES);
 
         Matrix4f matrix = poseStack.last().pose();
 
@@ -92,7 +102,7 @@ public class TracerRenderer {
             drawTracers(lines, matrix, poseStack, route, client, cam, config);
         }
 
-        buffers.endBatch(RenderTypes.lines());
+        buffers.endBatch(LINES);
     }
 
     private void drawTracers(VertexConsumer lines,
@@ -144,9 +154,15 @@ public class TracerRenderer {
     /**
      * Emit one line segment in camera-relative coordinates.
      *
-     * Takes primitives rather than Vec3 because this runs twelve times per
-     * highlighted tree per frame; allocating vectors here churned the heap for
-     * no benefit.
+     * <p>Every element of the vertex format must be written. On 26.1 the lines
+     * pipeline uses {@code POSITION_COLOR_NORMAL_LINE_WIDTH}, so omitting
+     * {@link VertexConsumer#setLineWidth} leaves a partial vertex in the shared
+     * buffer and Minecraft throws {@code Missing elements in vertex: LineWidth}
+     * later, when it flushes the main pass. That failure surfaces far from this
+     * code and cannot be caught here, so the setters must stay complete.
+     *
+     * <p>Takes primitives rather than Vec3 because this runs twelve times per
+     * highlighted tree per frame.
      */
     private void segment(VertexConsumer lines,
                          Matrix4f matrix,
@@ -166,9 +182,17 @@ public class TracerRenderer {
         ny /= length;
         nz /= length;
 
+        float width = (float) BirchConfig.get().lineWidth;
         PoseStack.Pose pose = poseStack.last();
-        lines.addVertex(matrix, x1, y1, z1).setColor(r, g, b, a).setNormal(pose, nx, ny, nz);
-        lines.addVertex(matrix, x2, y2, z2).setColor(r, g, b, a).setNormal(pose, nx, ny, nz);
+
+        lines.addVertex(matrix, x1, y1, z1)
+                .setColor(r, g, b, a)
+                .setNormal(pose, nx, ny, nz)
+                .setLineWidth(width);
+        lines.addVertex(matrix, x2, y2, z2)
+                .setColor(r, g, b, a)
+                .setNormal(pose, nx, ny, nz)
+                .setLineWidth(width);
     }
 
     /** Wireframe cube around a block, drawn as twelve edges. */

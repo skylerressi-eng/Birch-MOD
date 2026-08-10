@@ -80,6 +80,8 @@ public final class BirchConfig {
     public int routeLength = 5;
     /** Blocks above the trunk base to treat as the tree's centre. */
     public int treeCenterHeight = 2;
+    /** Width of tracer and highlight lines, in pixels. */
+    public double lineWidth = 2.0;
 
     // ---- Notifications ----
     public boolean notifyOnReady = true;
@@ -132,6 +134,7 @@ public final class BirchConfig {
         hudY = Math.max(0, hudY);
         routeLength = Math.max(1, Math.min(16, routeLength));
         treeCenterHeight = Math.max(0, Math.min(12, treeCenterHeight));
+        lineWidth = Math.max(0.5, Math.min(10.0, lineWidth));
         if (bazaarProductId == null || bazaarProductId.isBlank()) {
             bazaarProductId = "BIRCH_LOG";
         }
