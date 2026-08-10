@@ -178,11 +178,33 @@ public final class RouteLibrary {
                         if (store.routes == null) {
                             store.routes = new LinkedHashMap<>();
                         }
+                        sanitise();
                     }
                 }
             }
         } catch (Exception e) {
             store = new Store();
+        }
+    }
+
+    /**
+     * Repair anything the file cannot be trusted to contain.
+     *
+     * Names are compared all over the command layer, so a null one — from a
+     * hand-edited or truncated file — would throw the first time a route was
+     * listed. The map key is a serviceable name, and a route with no points is
+     * no route at all.
+     */
+    private static void sanitise() {
+        store.routes.entrySet().removeIf(entry -> entry.getValue() == null);
+        for (Map.Entry<String, RecordedRoute> entry : store.routes.entrySet()) {
+            RecordedRoute route = entry.getValue();
+            if (route.name == null || route.name.isBlank()) {
+                route.name = entry.getKey();
+            }
+            if (route.points == null) {
+                route.points = new ArrayList<>();
+            }
         }
     }
 

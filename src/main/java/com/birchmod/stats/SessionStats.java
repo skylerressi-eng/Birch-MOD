@@ -91,6 +91,22 @@ public final class SessionStats {
         markActive();
     }
 
+    /**
+     * Take back a chop that turned out not to be one.
+     *
+     * A chunk reloading reads as air and looks exactly like a felled tree. The
+     * tracker rejects the regrow that follows, and this rejects the chop, so a
+     * glitch cannot leave half a cycle counted.
+     */
+    public static void undoTreeChopped() {
+        if (sessionTrees > 0) {
+            sessionTrees--;
+        }
+        if (lifetime.treesChopped > 0) {
+            lifetime.treesChopped--;
+        }
+    }
+
     public static void recordRate(double birchPerHour) {
         if (birchPerHour > sessionBestRate) {
             sessionBestRate = birchPerHour;

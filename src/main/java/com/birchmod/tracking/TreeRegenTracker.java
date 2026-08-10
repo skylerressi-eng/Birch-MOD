@@ -314,7 +314,7 @@ public class TreeRegenTracker {
 
             // An unloaded chunk reads as air. Believing that would register a
             // phantom chop, then a phantom regrow the moment it loads again.
-            if (!client.level.hasChunkAt(tree.base)) {
+            if (!client.level.hasChunk(tree.base.getX() >> 4, tree.base.getZ() >> 4)) {
                 continue;
             }
 
@@ -333,8 +333,11 @@ public class TreeRegenTracker {
             } else if (tree.downed && standing) {
                 long downFor = now - tree.downedAt;
                 if (downFor < MIN_DOWNED_MS) {
-                    // Too quick to be a real regen cycle: treat the whole thing
-                    // as a glitch rather than counting or measuring it.
+                    // Too quick to be a real regen cycle. The chop that opened
+                    // it was counted, so rejecting the regrow without also
+                    // taking that back would leave a phantom chop inflating the
+                    // totals for good. Undo the pair together.
+                    SessionStats.undoTreeChopped();
                     tree.downed = false;
                     tree.downedAt = 0L;
                     tree.standing = standing;

@@ -43,18 +43,26 @@ public final class RouteRecorder {
      * Called when a tree is fully chopped. Consecutive repeats of the same tree
      * are collapsed so re-felling one stump does not stack duplicates.
      */
-    public synchronized void onTreeChopped(BlockPos base) {
-        if (recording == null || base == null) {
-            return;
-        }
-        if (!recording.points.isEmpty()) {
-            RecordedRoute.Point last = recording.points.get(recording.points.size() - 1);
-            if (last.x == base.getX() && last.y == base.getY() && last.z == base.getZ()) {
+    public void onTreeChopped(BlockPos base) {
+        String routeName;
+        int count;
+
+        synchronized (this) {
+            if (recording == null || base == null) {
                 return;
             }
+            if (!recording.points.isEmpty()) {
+                RecordedRoute.Point last = recording.points.get(recording.points.size() - 1);
+                if (last.x == base.getX() && last.y == base.getY() && last.z == base.getZ()) {
+                    return;
+                }
+            }
+            recording.points.add(new RecordedRoute.Point(base.getX(), base.getY(), base.getZ()));
+            routeName = name;
+            count = recording.size();
         }
-        recording.points.add(new RecordedRoute.Point(base.getX(), base.getY(), base.getZ()));
-        Notifier.actionBar("§eRecording §f" + name + " §7— " + recording.size() + " stop(s)");
+
+        Notifier.actionBar("§eRecording §f" + routeName + " §7— " + count + " stop(s)");
     }
 
     /**
@@ -62,14 +70,20 @@ public final class RouteRecorder {
      *
      * @return the saved route, or null if it had too few stops to be useful
      */
-    public synchronized RecordedRoute stop() {
-        RecordedRoute finished = recording;
-        recording = null;
-        name = null;
+    public RecordedRoute stop() {
+        RecordedRoute finished;
+        synchronized (this) {
+            finished = recording;
+            recording = null;
+            name = null;
+        }
 
         if (finished == null || finished.size() < RouteLibrary.MIN_STOPS) {
             return null;
         }
+        // Saving writes the routes file. Doing that inside the lock would make
+        // a chop arriving on the client thread wait on a disk write, so the
+        // recording is detached first and only then persisted.
         RouteLibrary.save(finished);
         return finished;
     }
