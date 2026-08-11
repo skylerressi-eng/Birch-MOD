@@ -56,6 +56,15 @@ final class TreeSight {
         BlockPos recorded = new BlockPos(x, y, z);
         TreeRegenTracker.Tree tree = tracker.findNear(x, y, z, TreeRegenTracker.SAME_TREE_RADIUS);
 
+        // A tree registered by the sweep but not yet read holds a wood count of
+        // zero simply because nobody has looked. Reporting that as "cleared"
+        // marches the route straight past a tree it knows nothing about, so an
+        // unexamined tree is treated exactly like one out of range: somewhere
+        // to go, with its marker read from the world.
+        if (tree != null && !tree.isProbed()) {
+            return new Live(tree.base, tree, readWorld(tree.base), -1, 0.0);
+        }
+
         if (tree != null) {
             int wood = tree.getWoodCount();
             if (wood > 0) {

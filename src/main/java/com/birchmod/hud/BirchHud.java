@@ -199,6 +199,11 @@ public class BirchHud implements HudElement {
             return new Line("Route: " + range + ", finish it — "
                     + next.woodLeft() + " log(s) left", COLOR_GOLD);
         }
+        // Out of tracking range: say the distance and nothing else, rather
+        // than claiming a tree is ready when nothing has looked at it.
+        if (!next.isKnown()) {
+            return new Line("Route: " + range + " ahead", COLOR_GOLD);
+        }
         if (next.etaSeconds() > 0.01) {
             return new Line("Route: " + range + ", wait "
                     + SEC_FMT.format(next.etaSeconds()) + "s", COLOR_GOLD);

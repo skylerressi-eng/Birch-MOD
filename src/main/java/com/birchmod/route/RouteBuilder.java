@@ -66,7 +66,12 @@ public final class RouteBuilder {
         int count = Math.min(FOCUS_STOPS, stops.size());
         List<BlockPos> bases = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            bases.add(stops.get(i).base());
+            BlockPos base = stops.get(i).base();
+            // The focus set rejects nulls outright, and losing route building
+            // to one is a poor trade for a field that should never be null.
+            if (base != null) {
+                bases.add(base);
+            }
         }
         return bases;
     }

@@ -45,8 +45,12 @@ import java.util.Map;
  */
 public final class RouteOptimizer {
 
-    /** Points closer than this are treated as the same tree. */
-    private static final double MERGE_DISTANCE = 2.0;
+    /**
+     * Points closer than this are treated as the same tree — the same figure
+     * the recorder and the travel graph use, so a compiled route can never
+     * carry two stops that the rest of the mod considers one tree.
+     */
+    private static final double MERGE_DISTANCE = RecordedRoute.SAME_TREE_DISTANCE;
 
     /** Cap the search so a huge library cannot stall the command. */
     private static final int MAX_CANDIDATES = 64;

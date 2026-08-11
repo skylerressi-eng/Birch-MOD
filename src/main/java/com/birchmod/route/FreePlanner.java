@@ -75,7 +75,7 @@ public final class FreePlanner {
                 if (!tree.base.equals(base)) {
                     continue;
                 }
-                if (tree.hasWood()) {
+                if (worthVisiting(tree)) {
                     ordered.add(tree);
                 }
                 break;
@@ -151,8 +151,20 @@ public final class FreePlanner {
         return unfinished.isEmpty() ? candidates : unfinished;
     }
 
+    /**
+     * Whether this tree is somewhere to go.
+     *
+     * A tree the sweep has registered but not yet read reports no wood, because
+     * nobody has looked — not because it is cleared. Dropping it on that basis
+     * makes the marker jump to the next tree and back a moment later, every
+     * time you walk into range of a new one.
+     */
+    private static boolean worthVisiting(TreeRegenTracker.Tree tree) {
+        return !tree.isProbed() || tree.hasWood();
+    }
+
     private double readySeconds(TreeRegenTracker.Tree tree) {
-        if (tree.hasWood()) {
+        if (worthVisiting(tree)) {
             return 0.0;
         }
         return Math.max(0.0, tracker.getSecondsUntilRegen(tree));
@@ -161,6 +173,13 @@ public final class FreePlanner {
     /** Re-time the settled order and record it as the new commitment. */
     private List<Stop> emit(List<TreeRegenTracker.Tree> ordered, Vec3 playerPos) {
         committed.clear();
+
+        // Honour a route length that has since been lowered, rather than
+        // carrying the old commitment until every stop on it is felled.
+        int limit = Math.max(1, BirchConfig.get().routeLength);
+        if (ordered.size() > limit) {
+            ordered = ordered.subList(0, limit);
+        }
 
         List<Stop> stops = new ArrayList<>(ordered.size());
         BlockPos previous = null;
@@ -175,7 +194,7 @@ public final class FreePlanner {
             double arrival = Math.max(clock + travel, readySeconds(tree));
 
             stops.add(new Stop(tree, tree.base, center, Math.max(0.0, arrival), order++,
-                    tree.getWoodCount(), tree.isPartiallyChopped()));
+                    tree.isProbed() ? tree.getWoodCount() : -1, tree.isPartiallyChopped()));
 
             committed.add(tree.base);
             previous = tree.base;

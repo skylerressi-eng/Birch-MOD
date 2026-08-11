@@ -118,11 +118,32 @@ public class TreeRegenTracker {
     private static final double FORGET_DISTANCE_SQ = 64.0 * 64.0;
 
     /**
+     * Trees this close are probed every pass regardless of the budget. The
+     * route names the trees it is pointing at, but the one you are swinging at
+     * is not always one of them — and that is the one whose highlight has to
+     * keep up with the wood.
+     */
+    private static final double NEAR_DISTANCE_SQ = 8.0 * 8.0;
+
+    /**
      * How far a recorded coordinate may sit from a tracked base and still mean
      * the same tree. A trunk's base is re-detected a block or two off after it
      * regrows, so recorded routes never line up exactly.
      */
     public static final double SAME_TREE_RADIUS = 3.0;
+
+    /**
+     * Reads whether there is birch at a position.
+     *
+     * The probe takes one of these instead of reaching into the level itself,
+     * which keeps "is this tree felled?" — the question the whole route hangs
+     * on, and the one that was answered wrongly — exercisable against a tree
+     * whose shape is known.
+     */
+    @FunctionalInterface
+    public interface WoodSampler {
+        boolean isWood(int x, int y, int z);
+    }
 
     /** One tracked tree: a base, and the columns around it that belong to it. */
     public static final class Tree {
@@ -132,8 +153,13 @@ public class TreeRegenTracker {
         final int radius;
         final int width;
 
-        /** Cells this tree is allowed to probe; the rest belong to neighbours. */
-        final int ownedMask;
+        /**
+         * Cells this tree is allowed to probe; the rest belong to neighbours.
+         * Not final: when a neighbour is forgotten its ground comes free, and a
+         * tree that never reclaimed it would be permanently blind to wood
+         * standing in its own footprint.
+         */
+        int ownedMask;
 
         /** Cells that have ever held wood — the fast probe's working set. */
         int liveMask;
@@ -143,12 +169,31 @@ public class TreeRegenTracker {
         boolean probedOnce;
 
         boolean standing;
-        boolean downed;
-        long downedAt;
+
+        /**
+         * Written on the client thread, read by the world renderer every frame
+         * to draw the countdown. Volatile because a non-volatile {@code long}
+         * read is not guaranteed to be atomic in Java: a torn read of
+         * {@code downedAt} halfway through a write puts a nonsense number on a
+         * label for a frame, and the pair has to move together to be coherent.
+         */
+        volatile boolean downed;
+        volatile long downedAt;
+
+        /**
+         * Whether the fell has been announced. Announcing it the instant the
+         * last log vanishes means a chunk flicker is announced too, and the
+         * route recorder and travel graph have no way to take that back — the
+         * phantom stop is saved and the phantom leg is timed. So the tree has
+         * to stay down long enough to be believed first.
+         */
+        boolean chopReported;
 
         /** Per-tree history, so individual trees can be compared. */
         int regenCount;
-        double lastRegenSeconds = -1.0;
+
+        /** Read per frame alongside {@link #downedAt}; same reasoning. */
+        volatile double lastRegenSeconds = -1.0;
 
         /** Wood anywhere in the footprint, and the most ever seen there. */
         volatile int woodCount;
@@ -190,6 +235,19 @@ public class TreeRegenTracker {
 
         public boolean isDowned() {
             return downed;
+        }
+
+        /**
+         * Whether this tree has been read at all yet.
+         *
+         * A tree is registered by the discovery sweep and only looked at on a
+         * later pass, so for a moment it is known to exist with nothing known
+         * about it. Its wood count is zero then, and anything reading that as
+         * "cleared" will walk the route straight past a tree it has never
+         * examined.
+         */
+        public boolean isProbed() {
+            return probedOnce;
         }
 
         /** True while any wood remains — the only reason to walk to this tree. */
@@ -246,6 +304,19 @@ public class TreeRegenTracker {
 
     /** Reused when collecting a tree's remaining logs. */
     private final long[] scratch = new long[MAX_WOOD_MARKS];
+
+    /** What one footprint scan found. Reused, so scanning allocates nothing. */
+    private static final class Scan {
+        int count;
+        int marks;
+        int liveCells;
+        int bestScore;
+        int bestX;
+        int bestY;
+        int bestZ;
+    }
+
+    private final Scan scan = new Scan();
 
     /**
      * Bases the route is pointing at. These are probed every pass regardless of
@@ -456,8 +527,25 @@ public class TreeRegenTracker {
         int regrewThisPass = 0;
         int budget = PROBE_BUDGET_PER_PASS;
 
+        // One lambda per pass rather than per tree, and it keeps the probe
+        // itself free of any dependency on the world it is reading.
+        WoodSampler sampler = (x, y, z) -> {
+            cursor.set(x, y, z);
+            return isBirchAt(client, cursor);
+        };
+
         for (Iterator<Map.Entry<BlockPos, Tree>> it = trees.entrySet().iterator(); it.hasNext(); ) {
             Tree tree = it.next().getValue();
+
+            // Announce a pending fell before anything can cut this iteration
+            // short. It reads no blocks — it is pure arithmetic on when the
+            // tree went down — so none of the guards below apply to it, and
+            // every one of them would otherwise lose the announcement: the
+            // tree gets forgotten because you sprinted away from it, its chunk
+            // unloads behind you, or it simply loses the race for a probe slot.
+            // A chop that is dropped is a stop missing from the route you are
+            // recording and a leg time that never gets measured.
+            confirmChop(tree, now);
 
             if (playerPos.distSqr(tree.base) > FORGET_DISTANCE_SQ) {
                 releaseColumns(tree);
@@ -471,7 +559,8 @@ public class TreeRegenTracker {
                 continue;
             }
 
-            boolean urgent = focused.contains(tree.base);
+            boolean urgent = playerPos.distSqr(tree.base) <= NEAR_DISTANCE_SQ
+                    || focused.contains(tree.base);
             if (!urgent) {
                 if (now < tree.nextProbeAt) {
                     continue;
@@ -483,28 +572,23 @@ public class TreeRegenTracker {
             }
             tree.nextProbeAt = now + NORMAL_PROBE_INTERVAL_MS;
 
-            boolean standing = probeTree(client, tree, now);
+            boolean standing = probeTree(sampler, tree, now);
 
             if (!tree.downed && tree.standing && !standing) {
                 // Every column of this tree is empty: the clock starts now.
+                // Nothing is announced yet — see confirmChop.
                 tree.downed = true;
                 tree.downedAt = now;
-                SessionStats.recordTreeChopped();
-
-                java.util.function.Consumer<BlockPos> listener = chopListener;
-                if (listener != null) {
-                    listener.accept(tree.base);
-                }
+                tree.chopReported = false;
             } else if (tree.downed && standing) {
                 long downFor = now - tree.downedAt;
                 if (downFor < MIN_DOWNED_MS) {
-                    // Too quick to be a real regen cycle. The chop that opened
-                    // it was counted, so rejecting the regrow without also
-                    // taking that back would leave a phantom chop inflating the
-                    // totals for good. Undo the pair together.
-                    SessionStats.undoTreeChopped();
+                    // Too quick to be a real regen cycle — a chunk flickering
+                    // as it reloads, not a tree. Because the fell was never
+                    // announced, there is nothing to take back.
                     tree.downed = false;
                     tree.downedAt = 0L;
+                    tree.chopReported = false;
                     tree.standing = standing;
                     continue;
                 }
@@ -519,6 +603,7 @@ public class TreeRegenTracker {
 
                 tree.downed = false;
                 tree.downedAt = 0L;
+                tree.chopReported = false;
                 tree.fullWoodCount = tree.woodCount;
                 // A regrown tree may come back a different shape, so re-learn
                 // which of its columns hold wood on the next probe.
@@ -535,6 +620,30 @@ public class TreeRegenTracker {
     }
 
     /**
+     * Announce a fell once the tree has stayed down long enough to be real.
+     *
+     * The route recorder writes a stop and the travel graph times a leg the
+     * moment they hear about a chop, and neither can be told to forget. A chunk
+     * flickering to air for a tick would therefore save a phantom stop into a
+     * saved route and poison a leg time permanently. Waiting out
+     * {@link #MIN_DOWNED_MS} costs a second and a half of delay and removes the
+     * whole class of problem — and because both ends of a leg are delayed by
+     * the same amount, the times measured between them are unaffected.
+     */
+    private void confirmChop(Tree tree, long now) {
+        if (!tree.downed || tree.chopReported || now - tree.downedAt < MIN_DOWNED_MS) {
+            return;
+        }
+        tree.chopReported = true;
+        SessionStats.recordTreeChopped();
+
+        java.util.function.Consumer<BlockPos> listener = chopListener;
+        if (listener != null) {
+            listener.accept(tree.base);
+        }
+    }
+
+    /**
      * Scan this tree's owned columns, recording how much wood is left, where it
      * is, and which block the marker should sit on.
      *
@@ -543,10 +652,68 @@ public class TreeRegenTracker {
      * than a branch. It can never float in the air or settle on a leaf, because
      * only positions confirmed to hold birch are ever considered.
      *
+     * <p>Between full sweeps only the columns known to hold wood are read,
+     * which is what keeps a nine-column footprint costing about what one column
+     * did. That shortcut is safe for every answer except one: a fast scan
+     * finding nothing may simply have been looking in the wrong place, and
+     * "this tree is felled" is exactly the answer that must never be wrong —
+     * it is what sends you away from wood still standing. So an empty fast scan
+     * is never believed; it is re-run across the whole footprint first.
+     *
      * @return true while any wood remains
      */
-    private boolean probeTree(Minecraft client, Tree tree, long now) {
+    boolean probeTree(WoodSampler sampler, Tree tree, long now) {
         boolean full = !tree.probedOnce || (now - tree.lastFullProbeAt) >= FULL_PROBE_INTERVAL_MS;
+
+        scanFootprint(sampler, tree, full);
+        if (!full && scan.count == 0) {
+            full = true;
+            scanFootprint(sampler, tree, true);
+        }
+
+        int radius = tree.radius;
+        int width = tree.width;
+
+        if (full) {
+            tree.lastFullProbeAt = now;
+            reclaimFreedColumns(tree);
+            // Keep the base cell in the working set even when it is empty, so a
+            // felled tree is still watched where it will grow back.
+            int baseCell = 1 << cellIndex(0, 0, radius, width);
+            tree.liveMask = (scan.liveCells | baseCell) & tree.ownedMask;
+        } else if (scan.liveCells != 0) {
+            tree.liveMask |= scan.liveCells;
+        }
+        tree.probedOnce = true;
+
+        tree.woodCount = scan.count;
+        publishWood(tree, scan.marks);
+
+        if (scan.count == 0) {
+            tree.target = tree.base;
+            tree.partiallyChopped = false;
+            return false;
+        }
+
+        // A tree only counts as partially chopped once it has lost wood it was
+        // previously seen to have. A tree discovered already short establishes
+        // that shorter size as its own full size, so untouched trees and
+        // naturally stubby ones are never flagged.
+        if (scan.count > tree.fullWoodCount) {
+            tree.fullWoodCount = scan.count;
+        }
+        tree.partiallyChopped = !tree.downed && scan.count < tree.fullWoodCount;
+
+        BlockPos current = tree.target;
+        if (current == null || current.getX() != scan.bestX
+                || current.getY() != scan.bestY || current.getZ() != scan.bestZ) {
+            tree.target = new BlockPos(scan.bestX, scan.bestY, scan.bestZ);
+        }
+        return true;
+    }
+
+    /** Read the footprint into {@link #scan}. Allocates nothing. */
+    private void scanFootprint(WoodSampler sampler, Tree tree, boolean full) {
         int mask = full ? tree.ownedMask : tree.liveMask;
         if (mask == 0) {
             mask = tree.ownedMask;
@@ -557,13 +724,13 @@ public class TreeRegenTracker {
         int radius = tree.radius;
         int width = tree.width;
 
-        int count = 0;
-        int marks = 0;
-        int liveCells = 0;
-        int bestScore = Integer.MAX_VALUE;
-        int bestX = base.getX();
-        int bestY = base.getY();
-        int bestZ = base.getZ();
+        scan.count = 0;
+        scan.marks = 0;
+        scan.liveCells = 0;
+        scan.bestScore = Integer.MAX_VALUE;
+        scan.bestX = base.getX();
+        scan.bestY = base.getY();
+        scan.bestZ = base.getZ();
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
@@ -577,67 +744,60 @@ public class TreeRegenTracker {
 
                 for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
                     int y = base.getY() + dy;
-                    cursor.set(x, y, z);
-                    if (!isBirchAt(client, cursor)) {
+                    if (!sampler.isWood(x, y, z)) {
                         continue;
                     }
-                    count++;
+                    scan.count++;
                     cellHasWood = true;
-                    if (marks < MAX_WOOD_MARKS) {
-                        scratch[marks++] = BlockPos.asLong(x, y, z);
+                    if (scan.marks < MAX_WOOD_MARKS) {
+                        scratch[scan.marks++] = BlockPos.asLong(x, y, z);
                     }
                     // Vertical closeness to the wanted height decides, with a
                     // strong penalty for stepping off the trunk, so the marker
                     // sits on the trunk whenever the trunk has wood at all.
                     int score = Math.abs(y - desired) + (Math.abs(dx) + Math.abs(dz)) * 8;
-                    if (score < bestScore) {
-                        bestScore = score;
-                        bestX = x;
-                        bestY = y;
-                        bestZ = z;
+                    if (score < scan.bestScore) {
+                        scan.bestScore = score;
+                        scan.bestX = x;
+                        scan.bestY = y;
+                        scan.bestZ = z;
                     }
                 }
                 if (cellHasWood) {
-                    liveCells |= 1 << cell;
+                    scan.liveCells |= 1 << cell;
                 }
             }
         }
+    }
 
-        if (full) {
-            tree.lastFullProbeAt = now;
-            // Keep the base cell in the working set even when it is empty, so a
-            // felled tree is still watched where it will grow back.
-            int baseCell = 1 << cellIndex(0, 0, radius, width);
-            tree.liveMask = (liveCells | baseCell) & tree.ownedMask;
-        } else if (liveCells != 0) {
-            tree.liveMask |= liveCells;
+    /**
+     * Take over any column in this tree's footprint that has since come free.
+     *
+     * Ground is claimed once, on discovery, by whichever trunk was found first.
+     * When that trunk is later forgotten — walked away from, or it was never a
+     * tree at all — its columns are released, and a neighbour that had been
+     * refused them would stay blind to wood standing in its own footprint for
+     * as long as it lived. Run on the full sweep, so it costs nine map lookups
+     * every eight seconds.
+     */
+    private void reclaimFreedColumns(Tree tree) {
+        if (Integer.bitCount(tree.ownedMask) == tree.width * tree.width) {
+            return;
         }
-        tree.probedOnce = true;
-
-        tree.woodCount = count;
-        publishWood(tree, marks);
-
-        if (count == 0) {
-            tree.target = base;
-            tree.partiallyChopped = false;
-            return false;
+        for (int dx = -tree.radius; dx <= tree.radius; dx++) {
+            for (int dz = -tree.radius; dz <= tree.radius; dz++) {
+                int cell = cellIndex(dx, dz, tree.radius, tree.width);
+                if ((tree.ownedMask & (1 << cell)) != 0) {
+                    continue;
+                }
+                long key = columnKey(tree.base.getX() + dx, tree.base.getZ() + dz);
+                if (columnOwner.containsKey(key)) {
+                    continue;
+                }
+                columnOwner.put(key, tree.base);
+                tree.ownedMask |= 1 << cell;
+            }
         }
-
-        // A tree only counts as partially chopped once it has lost wood it was
-        // previously seen to have. A tree discovered already short establishes
-        // that shorter size as its own full size, so untouched trees and
-        // naturally stubby ones are never flagged.
-        if (count > tree.fullWoodCount) {
-            tree.fullWoodCount = count;
-        }
-        tree.partiallyChopped = !tree.downed && count < tree.fullWoodCount;
-
-        BlockPos current = tree.target;
-        if (current == null || current.getX() != bestX
-                || current.getY() != bestY || current.getZ() != bestZ) {
-            tree.target = new BlockPos(bestX, bestY, bestZ);
-        }
-        return true;
     }
 
     /**

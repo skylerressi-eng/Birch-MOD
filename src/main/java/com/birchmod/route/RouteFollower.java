@@ -2,10 +2,12 @@ package com.birchmod.route;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.TreeRegenTracker;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -115,7 +117,7 @@ public final class RouteFollower {
     private void rejoinIfLost(RecordedRoute recorded, Vec3 playerPos, TreeSight.Live[] live) {
         boolean lost = index < 0
                 || index >= live.length
-                || !recorded.name.equals(routeName);
+                || !Objects.equals(recorded.name, routeName);
 
         if (!lost) {
             Vec3 held = Vec3.atCenterOf(live[index].center());
@@ -137,21 +139,34 @@ public final class RouteFollower {
     private List<Stop> emit(TreeSight.Live[] live, int size, Vec3 playerPos) {
         int lookahead = Math.min(size, Math.max(1, BirchConfig.get().routeLength));
         List<Stop> stops = new ArrayList<>(lookahead);
+        List<BlockPos> shown = new ArrayList<>(lookahead);
 
         double clock = 0.0;
         int order = 1;
+        BlockPos previous = null;
 
-        for (int step = 0; step < lookahead; step++) {
+        for (int step = 0; step < size && stops.size() < lookahead; step++) {
             TreeSight.Live current = live[(index + step) % size];
 
-            double travel = step == 0
+            // Two recorded points can land on one trunk — the tree was felled,
+            // regrew a block over, and got recorded again at the new spot.
+            // Drawing both puts two markers on one tree with a line running
+            // between them, which reads as a step in the route when it is the
+            // same stop.
+            if (shown.contains(current.base())) {
+                continue;
+            }
+            shown.add(current.base());
+
+            double travel = previous == null
                     ? TreeSight.approachSeconds(playerPos, current.center())
-                    : TreeSight.travelSeconds(live[(index + step - 1) % size].base(), current.base());
+                    : TreeSight.travelSeconds(previous, current.base());
 
             double arrival = Math.max(clock + travel, current.readySeconds());
 
             stops.add(new Stop(current.tree(), current.base(), current.center(),
                     Math.max(0.0, arrival), order++, current.woodLeft(), current.unfinished()));
+            previous = current.base();
             clock = arrival;
         }
         return stops;

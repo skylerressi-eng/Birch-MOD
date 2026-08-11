@@ -46,8 +46,16 @@ public final class TravelGraph {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "birchoptimizer-travel.json";
 
-    /** Positions this close are the same tree. */
-    private static final double MERGE_DISTANCE = 3.0;
+    /**
+     * Positions this close are the same tree.
+     *
+     * Deliberately the same figure the recorder and the optimizer use for
+     * position identity. A graph that merged more loosely than they do would
+     * hand back leg times for a pair of trees they still consider distinct,
+     * and one that merged more tightly would mint a fresh node on every
+     * regrowth and never gather enough samples to be useful.
+     */
+    private static final double MERGE_DISTANCE = RecordedRoute.SAME_TREE_DISTANCE;
 
     /** Observations before a leg time is trusted over the distance estimate. */
     public static final int MIN_LEG_SAMPLES = 3;
@@ -422,22 +430,39 @@ public final class TravelGraph {
         }
     }
 
-    /** Snapshot under the lock, write outside it. */
+    /**
+     * Copy under the lock, serialise and write outside it.
+     *
+     * Turning the graph into JSON is the expensive half, and doing it on the
+     * client thread would put a hitch in the middle of play every time the
+     * save timer came round. Copying a few hundred four-field objects does not.
+     */
     public static void persistAsync() {
-        final String json;
-        synchronized (TravelGraph.class) {
-            json = GSON.toJson(store);
-        }
-        IO.execute(() -> write(json));
+        Store snapshot = snapshot();
+        IO.execute(() -> write(GSON.toJson(snapshot)));
     }
 
     /** Blocking write, for a clean shutdown. */
     public static void persistNow() {
-        final String json;
-        synchronized (TravelGraph.class) {
-            json = GSON.toJson(store);
+        write(GSON.toJson(snapshot()));
+    }
+
+    private static synchronized Store snapshot() {
+        Store copy = new Store();
+        for (Map.Entry<String, Node> entry : store.nodes.entrySet()) {
+            Node node = entry.getValue();
+            Node clone = new Node(node.x, node.y, node.z);
+            clone.chops = node.chops;
+            copy.nodes.put(entry.getKey(), clone);
         }
-        write(json);
+        for (Map.Entry<String, Leg> entry : store.legs.entrySet()) {
+            Leg leg = entry.getValue();
+            Leg clone = new Leg();
+            clone.count = leg.count;
+            clone.meanSeconds = leg.meanSeconds;
+            copy.legs.put(entry.getKey(), clone);
+        }
+        return copy;
     }
 
     private static void write(String json) {
