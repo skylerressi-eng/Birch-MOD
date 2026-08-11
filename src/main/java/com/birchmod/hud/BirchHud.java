@@ -8,6 +8,7 @@ import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.route.RouteBuilder;
+import com.birchmod.route.Stop;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
@@ -180,7 +181,7 @@ public class BirchHud implements HudElement {
 
     /** Distance and wait for the next stop on the planned route. */
     private Line routeLine() {
-        RouteBuilder.Stop next = routeBuilder.getNext();
+        Stop next = routeBuilder.getNext();
         if (next == null) {
             return new Line("Route: no trees in range", COLOR_GREY);
         }
@@ -190,11 +191,22 @@ public class BirchHud implements HudElement {
                 ? client.player.position().distanceTo(Vec3.atCenterOf(next.center()))
                 : 0.0;
 
+        String range = INT_FMT.format(distance) + "m";
+
+        // A trunk you chopped into and walked away from is the one thing worth
+        // shouting about — it is free birch standing where you already are.
+        if (next.unfinished() && next.woodLeft() > 0) {
+            return new Line("Route: " + range + ", finish it — "
+                    + next.woodLeft() + " log(s) left", COLOR_GOLD);
+        }
         if (next.etaSeconds() > 0.01) {
-            return new Line("Route: " + INT_FMT.format(distance) + "m, wait "
+            return new Line("Route: " + range + ", wait "
                     + SEC_FMT.format(next.etaSeconds()) + "s", COLOR_GOLD);
         }
-        return new Line("Route: " + INT_FMT.format(distance) + "m, ready", COLOR_GREEN);
+        if (next.woodLeft() > 0) {
+            return new Line("Route: " + range + ", " + next.woodLeft() + " log(s)", COLOR_GREEN);
+        }
+        return new Line("Route: " + range + ", ready", COLOR_GREEN);
     }
 
     private Line regenLine() {

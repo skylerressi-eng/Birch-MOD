@@ -90,6 +90,21 @@ public final class BirchConfig {
     public int routeLength = 5;
     /** Blocks above the trunk base to treat as the tree's centre. */
     public int treeCenterHeight = 2;
+    /**
+     * Follow a recorded route in exactly the order it was recorded.
+     *
+     * On, the route is a contract: it never reorders, and it never moves you on
+     * from a tree while wood is still standing on it. Off, a stop that will not
+     * have regrown by the time you reach it is stepped over and picked up next
+     * lap, which is faster on paper but no longer the route you walked.
+     */
+    public boolean strictRoute = true;
+    /**
+     * Half-width, in columns, of the block of ground one tree occupies. 1 gives
+     * a 3x3 footprint, which covers the paired trunks and side branches that a
+     * single column misses.
+     */
+    public int treeFootprint = 1;
     /** Width of tracer and highlight lines, in pixels. */
     public double lineWidth = 4.0;
     /** Fill the block to mine with translucent colour, not just an outline. */
@@ -148,6 +163,7 @@ public final class BirchConfig {
         hudY = Math.max(0, hudY);
         routeLength = Math.max(1, Math.min(16, routeLength));
         treeCenterHeight = Math.max(0, Math.min(12, treeCenterHeight));
+        treeFootprint = Math.max(0, Math.min(2, treeFootprint));
         lineWidth = Math.max(0.5, Math.min(10.0, lineWidth));
         if (bazaarProductId == null || bazaarProductId.isBlank()) {
             bazaarProductId = "BIRCH_LOG";

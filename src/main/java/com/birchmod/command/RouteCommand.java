@@ -8,6 +8,8 @@ import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteOptimizer;
 import com.birchmod.route.RouteRecorder;
+import com.birchmod.route.Stop;
+import com.birchmod.route.TravelGraph;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.TreeRegenTracker;
 
@@ -112,6 +114,22 @@ public final class RouteCommand {
                                     + "§a (" + route.size() + " stops).");
                             return 1;
                         })))
+                .then(ClientCommands.literal("strict")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().strictRoute = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            routeBuilder.resetCommitment();
+                            feedback(ctx.getSource(), BirchConfig.get().strictRoute
+                                    ? "§aStrict§7: following your recorded order exactly."
+                                    : "§eRelaxed§7: a cleared tree hands over to the nearest ready one.");
+                            feedback(ctx.getSource(), "§8Either way you are never moved on "
+                                    + "from a tree with wood still on it.");
+                            return 1;
+                        })))
+                .then(ClientCommands.literal("stats").executes(ctx -> {
+                    learned(ctx.getSource());
+                    return 1;
+                }))
                 .then(ClientCommands.literal("auto").executes(ctx -> {
                     RouteLibrary.clearActive();
                     routeBuilder.resetCommitment();
@@ -226,15 +244,27 @@ public final class RouteCommand {
 
         performance(source, regenTracker.getRegenSeconds());
 
-        for (RouteBuilder.Stop stop : routeBuilder.getRoute()) {
+        for (Stop stop : routeBuilder.getRoute()) {
             BlockPos center = stop.center();
             String eta = stop.etaSeconds() <= 0.01
                     ? "§aready"
                     : "§e" + SEC_FMT.format(stop.etaSeconds()) + "s";
             feedback(source, "§7 " + stop.order() + ". §f"
                     + center.getX() + ", " + center.getY() + ", " + center.getZ()
-                    + " §8— " + eta);
+                    + " §8— " + eta + " " + woodNote(stop));
         }
+    }
+
+    /** How much is left standing at a stop — the reason it is still a stop. */
+    private static String woodNote(Stop stop) {
+        if (!stop.isKnown()) {
+            return "§8(not in range yet)";
+        }
+        if (stop.woodLeft() == 0) {
+            return "§8(cleared)";
+        }
+        return (stop.unfinished() ? "§c" : "§a") + stop.woodLeft() + " log(s)"
+                + (stop.unfinished() ? " §cleft behind" : "");
     }
 
 
@@ -277,10 +307,19 @@ public final class RouteCommand {
             feedback(source, "§7  Dropped §f" + result.droppedOneOffs()
                     + "§7 one-off detour(s) you only took once");
         }
+        if (result.rescuedByUse() > 0) {
+            feedback(source, "§7  Kept §f" + result.rescuedByUse()
+                    + "§7 tree(s) one recording missed but you chop constantly");
+        }
         feedback(source, "§7  Kept §f" + result.chosen()
                 + "§7 agreed tree(s), reordered to shorten the loop");
         feedback(source, "§7  Lap: §f" + SEC_FMT.format(result.lapSeconds())
                 + "s §7vs regen §f" + SEC_FMT.format(regen) + "s");
+
+        int percentMeasured = (int) Math.round(result.measuredFraction() * 100.0);
+        feedback(source, "§7  Timed from §f" + result.measuredLegs() + "§7/§f"
+                + result.totalLegs() + "§7 legs you have actually walked §8("
+                + percentMeasured + "% measured, rest estimated)");
 
         if (result.lapSeconds() + 0.5 < regen) {
             feedback(source, "§e  Lap still shorter than regen — record more trees to fill the wait.");
@@ -368,6 +407,35 @@ public final class RouteCommand {
             feedback(source, "§8  Well under plan — walking the loop slower than assumed, "
                     + "or trees are being missed.");
         }
+    }
+
+    /**
+     * What the mod has learned by watching you forage, and how much of the
+     * planning still rests on estimates.
+     */
+    private static void learned(FabricClientCommandSource source) {
+        feedback(source, "§6§lBirch Optimizer §7— what it has learned");
+
+        int trees = TravelGraph.nodeCount();
+        int chops = TravelGraph.totalChops();
+        int measured = TravelGraph.measuredLegCount();
+        int legs = TravelGraph.legCount();
+
+        feedback(source, "§7Trees known: §f" + trees + " §8(" + chops + " chops recorded)");
+        feedback(source, "§7Legs timed: §f" + measured + "§7 of §f" + legs
+                + " §8(needs " + TravelGraph.MIN_LEG_SAMPLES + " passes each to count)");
+        speedNote(source);
+
+        if (measured == 0) {
+            feedback(source, "§8Nothing measured yet — plans are still estimates from "
+                    + "distance. Forage a few laps and they sharpen on their own.");
+        } else {
+            feedback(source, "§8Compiled routes are ordered by these times, not by "
+                    + "straight-line distance.");
+        }
+        feedback(source, "§7Route order: " + (BirchConfig.get().strictRoute
+                ? "§astrict §8(exactly as recorded)"
+                : "§erelaxed §8(cleared stops hand over to the nearest ready tree)"));
     }
 
     /** Show the travel speed the estimates are built on, and where it came from. */

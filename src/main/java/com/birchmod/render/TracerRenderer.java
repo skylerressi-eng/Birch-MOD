@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.birchmod.config.BirchConfig;
 import com.birchmod.route.RouteBuilder;
+import com.birchmod.route.Stop;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -88,7 +89,7 @@ public class TracerRenderer {
      * each change into a short glide. Frame-rate independent, so it looks the
      * same at 30fps and 200.
      */
-    private Vec3[] smoothPositions(List<RouteBuilder.Stop> route) {
+    private Vec3[] smoothPositions(List<Stop> route) {
         long now = System.nanoTime();
         double deltaSeconds = lastFrameNanos == 0L ? 1.0 / 60.0 : (now - lastFrameNanos) / 1.0e9;
         lastFrameNanos = now;
@@ -123,14 +124,14 @@ public class TracerRenderer {
             return;
         }
 
-        List<RouteBuilder.Stop> planned = routeBuilder.getRoute();
+        List<Stop> planned = routeBuilder.getRoute();
         if (planned.isEmpty()) {
             return;
         }
 
         // Draw only the tree being headed to unless the full path is asked for.
         // The planner still looks further ahead; this is purely what is shown.
-        List<RouteBuilder.Stop> route = config.showFullPath
+        List<Stop> route = config.showFullPath
                 ? planned
                 : planned.subList(0, 1);
 
@@ -145,7 +146,7 @@ public class TracerRenderer {
         // Solid fill first, so the outline drawn after it reads on top.
         if (config.filledHighlight && FILL_WRITER.supportsFill()) {
             VertexConsumer fill = buffers.getBuffer(FILLED);
-            for (RouteBuilder.Stop stop : route) {
+            for (Stop stop : route) {
                 int[] rgb = colourFor(stop);
                 fillBox(fill, matrix, poseStack, stop.center(), cam,
                         rgb[0], rgb[1], rgb[2], FILL_ALPHA, width);
@@ -155,7 +156,7 @@ public class TracerRenderer {
 
         VertexConsumer lines = buffers.getBuffer(LINES);
 
-        for (RouteBuilder.Stop stop : route) {
+        for (Stop stop : route) {
             int[] rgb = colourFor(stop);
             int alpha = stop.order() == 1 ? 255 : 170;
             drawBox(lines, matrix, poseStack, stop.center(), cam, rgb[0], rgb[1], rgb[2], alpha, width);
@@ -173,7 +174,7 @@ public class TracerRenderer {
     }
 
     /** Green when ready to chop, amber while regrowing, blue for later stops. */
-    private int[] colourFor(RouteBuilder.Stop stop) {
+    private int[] colourFor(Stop stop) {
         boolean waiting = stop.isWaiting();
         if (stop.order() == 1) {
             return waiting
@@ -193,7 +194,7 @@ public class TracerRenderer {
     private void drawTracers(VertexConsumer lines,
                              Matrix4f matrix,
                              PoseStack poseStack,
-                             List<RouteBuilder.Stop> route,
+                             List<Stop> route,
                              Vec3[] points,
                              Minecraft client,
                              Vec3 cam,
@@ -239,10 +240,10 @@ public class TracerRenderer {
                             Minecraft client,
                             Camera camera,
                             Vec3 cam,
-                            List<RouteBuilder.Stop> route) {
+                            List<Stop> route) {
         Font font = client.font;
 
-        for (RouteBuilder.Stop stop : route) {
+        for (Stop stop : route) {
             BlockPos pos = stop.center();
             double x = pos.getX() + 0.5 - cam.x;
             double y = pos.getY() + 1.1 - cam.y;

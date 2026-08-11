@@ -177,20 +177,20 @@ public class TreeTimerRenderer {
             if (!tree.isPartiallyChopped()) {
                 continue;
             }
-            int mask = tree.getLogMask();
-            if (mask == 0 || !inRange(tree.base, cameraPos, maxRangeSq)) {
+            long[] wood = tree.getWoodPositions();
+            if (wood.length == 0 || !inRange(tree.base, cameraPos, maxRangeSq)) {
                 continue;
             }
 
             if (lines == null) {
                 lines = buffers.getBuffer(LINES);
             }
-            for (int dy = 0; dy < 32 && (mask >>> dy) != 0; dy++) {
-                if ((mask & (1 << dy)) == 0) {
-                    continue;
-                }
+            // Every log the tracker can still see, wherever in the tree's
+            // footprint it stands — a leftover on a side trunk is exactly the
+            // one that gets walked past, so a base-column outline missed it.
+            for (long packed : wood) {
                 drawBox(lines, matrix, poseStack,
-                        tree.base.getX(), tree.base.getY() + dy, tree.base.getZ(),
+                        BlockPos.getX(packed), BlockPos.getY(packed), BlockPos.getZ(packed),
                         cameraPos, LEFTOVER_R, LEFTOVER_G, LEFTOVER_B, 220, width);
             }
         }

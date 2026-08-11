@@ -65,6 +65,11 @@ public final class TimerCommand {
         feedback(source, "§7Trees in range: §f" + regenTracker.getTrackedCount()
                 + " §8(standing " + regenTracker.getReadyCount()
                 + ", regrowing " + regenTracker.getDownedTrees().size() + ")");
+        int unfinished = regenTracker.getUnfinishedCount();
+        if (unfinished > 0) {
+            feedback(source, "§cLeft unfinished: §f" + unfinished
+                    + " §8(outlined red — logs still standing on trees you chopped into)");
+        }
         feedback(source, "§7Regrown this session: §f" + regenTracker.getRegeneratedCount()
                 + " §8(counted only when logs actually returned)");
 

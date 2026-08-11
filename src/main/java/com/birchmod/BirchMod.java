@@ -13,6 +13,7 @@ import com.birchmod.render.TreeTimerRenderer;
 import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteRecorder;
+import com.birchmod.route.TravelGraph;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
@@ -75,6 +76,7 @@ public class BirchMod implements ClientModInitializer {
         BirchConfig.load();
         SessionStats.load();
         RouteLibrary.load();
+        TravelGraph.load();
 
         tracker = new BirchTracker();
         regenTracker = new TreeRegenTracker();
@@ -84,7 +86,13 @@ public class BirchMod implements ClientModInitializer {
         routeBuilder = new RouteBuilder(regenTracker);
         routeRecorder = new RouteRecorder();
         movementTracker = new MovementTracker();
-        regenTracker.setChopListener(base -> routeRecorder.onTreeChopped(base));
+        // Felling a tree is the one unambiguous signal in the whole mod: it
+        // says which tree, in what order, and — with the previous one — how
+        // long that leg really took.
+        regenTracker.setChopListener(base -> {
+            routeRecorder.onTreeChopped(base);
+            TravelGraph.onTreeChopped(base);
+        });
 
         // Both API managers poll on their own 10-minute schedule.
         bazaar.start();
@@ -98,6 +106,13 @@ public class BirchMod implements ClientModInitializer {
             Guard.run("skyblock-detect", () -> SkyblockDetector.update(client));
             Guard.run("birch-tracker", () -> tracker.tick(client));
             Guard.run("regen-tracker", () -> regenTracker.tick(client));
+            // Between worlds there is no leg to time; measuring across a
+            // loading screen would fold it into the hop and poison the figure.
+            Guard.run("travel-chain", () -> {
+                if (client.level == null) {
+                    TravelGraph.breakChain();
+                }
+            });
             Guard.run("collection-rank", () -> collectionRank.tick(client));
             Guard.run("movement", () -> movementTracker.tick(client));
             Guard.run("route-builder", () -> {
@@ -108,8 +123,11 @@ public class BirchMod implements ClientModInitializer {
             Guard.run("keybinds", () -> Keybinds.tick(client, BirchMod::resetSession));
         });
 
-        // Persist lifetime totals on a clean exit.
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> SessionStats.save());
+        // Persist lifetime totals and travel measurements on a clean exit.
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            SessionStats.save();
+            TravelGraph.persistNow();
+        });
 
         BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, leaderboard, routeBuilder);
         HudElementRegistry.attachElementBefore(

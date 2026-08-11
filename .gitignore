@@ -20,3 +20,6 @@ eclipse/
 # OS
 .DS_Store
 Thumbs.db
+
+# Client logs from a local test run
+logs/

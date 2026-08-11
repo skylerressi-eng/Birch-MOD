@@ -1,9 +1,12 @@
 package com.birchmod.tracking;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.birchmod.config.BirchConfig;
@@ -17,30 +20,42 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Tracks every birch tree around the player and times how long each takes to
- * regenerate.
+ * regenerate. Tracking is entirely automatic — there is nothing to start.
  *
- * Tracking is entirely automatic — there is nothing to start or stop.
+ * <h2>A tree is a footprint, not a column</h2>
+ * The earlier version defined a tree as the single {@code (x, z)} column its
+ * base sat in. Park birches are not shaped like that: trunks come in pairs and
+ * branches step sideways, so clearing the tracked column left wood standing
+ * beside it while the tracker reported the tree fully felled. The route then
+ * moved on and abandoned the leftovers.
+ *
+ * A tree is now the block of columns around its base. Each column is
+ * <em>owned</em> by exactly one tree, claimed on discovery, so two trunks
+ * standing next to each other cannot count each other's wood — the tree stays
+ * felled once its own columns are empty, and not before.
  *
  * <h2>Cost</h2>
- * This runs on the client thread inside someone else's frame budget, next to a
- * dozen other mods, so the hot path is written to allocate nothing and to look
- * up as few blocks as possible:
+ * This runs on the client thread inside someone else's frame budget, so the
+ * probe is bounded three ways:
  *
  * <ul>
- *   <li>Liveness is a <em>vertical column probe</em> that exits on the first
- *       log found, so a standing tree costs a single block lookup. An earlier
- *       version flood-filled every tree five times a second, which allocated
- *       roughly a million objects per second once a grove filled the map and
- *       froze the client.</li>
- *   <li>All probing reuses one {@link BlockPos.MutableBlockPos}.</li>
- *   <li>Discovery only sweeps after the player has actually moved.</li>
+ *   <li>Only columns that have <em>ever</em> held wood are probed; the empty
+ *       corners of a footprint are visited on the slow full sweep only.</li>
+ *   <li>Each tree carries its own due time, and at most
+ *       {@link #PROBE_BUDGET_PER_PASS} of them are probed per pass.</li>
+ *   <li>The trees the route is actually pointing at are exempt from that budget
+ *       and probed every pass, so the block you are mining reacts instantly
+ *       while the rest of the grove ticks over in the background.</li>
  * </ul>
+ *
+ * All probing reuses one {@link BlockPos.MutableBlockPos} and one scratch array,
+ * so the steady state allocates nothing.
  */
 public class TreeRegenTracker {
 
     private static final int MAX_TREES = 48;
 
-    /** Fast pass: detect chop/regrow transitions on known trees. */
+    /** Fast pass: detect chop/regrow transitions. */
     private static final int UPDATE_INTERVAL_TICKS = 4; // 5x per second
 
     /** Slow pass: sweep for trees we have not seen yet. */
@@ -63,6 +78,32 @@ public class TreeRegenTracker {
     /** How tall a trunk can be. */
     private static final int TRUNK_HEIGHT = 12;
 
+    /** Upper bound on the configurable footprint, so the cell mask fits an int. */
+    private static final int MAX_FOOTPRINT_RADIUS = 2;
+
+    /** Leftover logs remembered per tree, for the renderer to outline. */
+    private static final int MAX_WOOD_MARKS = 24;
+
+    private static final long[] NO_WOOD = new long[0];
+
+    /**
+     * Unfocused trees probed per pass.
+     *
+     * Deliberately above what a full grove asks for: {@link #MAX_TREES} trees
+     * wanting a look every {@link #NORMAL_PROBE_INTERVAL_MS} works out at
+     * sixteen per pass, so a budget of twenty is never the binding constraint.
+     * A budget that bites would be served in map-iteration order, and the trees
+     * at the back of that order would go unwatched for as long as the order
+     * held.
+     */
+    private static final int PROBE_BUDGET_PER_PASS = 20;
+
+    /** How often an unfocused tree is re-probed. */
+    private static final long NORMAL_PROBE_INTERVAL_MS = 600L;
+
+    /** How often every owned column is swept, not just the live ones. */
+    private static final long FULL_PROBE_INTERVAL_MS = 8_000L;
+
     /** Ignore implausible measurements (block replaced by something else). */
     private static final double MAX_PLAUSIBLE_REGEN_SECONDS = 900.0;
 
@@ -76,9 +117,31 @@ public class TreeRegenTracker {
     /** Stop tracking trees further away than this (squared). */
     private static final double FORGET_DISTANCE_SQ = 64.0 * 64.0;
 
-    /** One tracked tree. */
+    /**
+     * How far a recorded coordinate may sit from a tracked base and still mean
+     * the same tree. A trunk's base is re-detected a block or two off after it
+     * regrows, so recorded routes never line up exactly.
+     */
+    public static final double SAME_TREE_RADIUS = 3.0;
+
+    /** One tracked tree: a base, and the columns around it that belong to it. */
     public static final class Tree {
         public final BlockPos base;
+
+        /** Fixed at creation so the cell masks stay meaningful for its lifetime. */
+        final int radius;
+        final int width;
+
+        /** Cells this tree is allowed to probe; the rest belong to neighbours. */
+        final int ownedMask;
+
+        /** Cells that have ever held wood — the fast probe's working set. */
+        int liveMask;
+
+        long nextProbeAt;
+        long lastFullProbeAt;
+        boolean probedOnce;
+
         boolean standing;
         boolean downed;
         long downedAt;
@@ -87,35 +150,39 @@ public class TreeRegenTracker {
         int regenCount;
         double lastRegenSeconds = -1.0;
 
+        /** Wood anywhere in the footprint, and the most ever seen there. */
+        volatile int woodCount;
+        int fullWoodCount;
+
         /**
-         * The block to highlight: an actual log of this trunk, not a fixed
-         * offset from the base. Written on the client thread, read by renderers.
+         * Packed positions of the logs still standing, so leftovers can be
+         * outlined without re-scanning on the render thread.
+         */
+        volatile long[] wood = NO_WOOD;
+
+        /**
+         * The block to highlight: an actual log of this tree, not an offset from
+         * the base. Written on the client thread, read by renderers.
          */
         volatile BlockPos target;
 
-        /** Logs currently in the trunk column, and the most ever seen there. */
-        int logCount;
-        int fullLogCount;
-
         /**
-         * Bit per trunk offset that still holds a log, so leftover logs can be
-         * located without re-scanning on the render thread.
-         */
-        volatile int logMask;
-
-        /**
-         * True when this tree has been chopped into and left unfinished: logs
-         * are missing compared with its own full height, but some remain.
+         * True when this tree has been chopped into and left unfinished: wood is
+         * missing compared with its own full size, but some remains.
          */
         volatile boolean partiallyChopped;
 
-        Tree(BlockPos base, boolean standing) {
+        Tree(BlockPos base, int radius, int ownedMask) {
             this.base = base;
-            this.standing = standing;
+            this.radius = radius;
+            this.width = radius * 2 + 1;
+            this.ownedMask = ownedMask;
+            this.liveMask = ownedMask;
             this.target = base;
+            this.standing = true;
         }
 
-        /** Always a real block position; falls back to the base when downed. */
+        /** Always a real block position; falls back to the base when felled. */
         public BlockPos getTarget() {
             BlockPos current = target;
             return current != null ? current : base;
@@ -125,8 +192,23 @@ public class TreeRegenTracker {
             return downed;
         }
 
+        /** True while any wood remains — the only reason to walk to this tree. */
+        public boolean hasWood() {
+            return woodCount > 0;
+        }
+
         public boolean isStanding() {
             return standing;
+        }
+
+        public int getWoodCount() {
+            return woodCount;
+        }
+
+        /** Packed positions of the remaining logs. Never null, never mutated. */
+        public long[] getWoodPositions() {
+            long[] snapshot = wood;
+            return snapshot != null ? snapshot : NO_WOOD;
         }
 
         public long getDownedAt() {
@@ -144,10 +226,6 @@ public class TreeRegenTracker {
         public boolean isPartiallyChopped() {
             return partiallyChopped;
         }
-
-        public int getLogMask() {
-            return logMask;
-        }
     }
 
     /**
@@ -157,8 +235,23 @@ public class TreeRegenTracker {
      */
     private final Map<BlockPos, Tree> trees = new ConcurrentHashMap<>();
 
+    /**
+     * Which tree owns each column, so neighbouring trunks cannot be credited
+     * with each other's wood. Client thread only.
+     */
+    private final Map<Long, BlockPos> columnOwner = new java.util.HashMap<>();
+
     /** Reused for every block probe; the hot path allocates nothing. */
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+    /** Reused when collecting a tree's remaining logs. */
+    private final long[] scratch = new long[MAX_WOOD_MARKS];
+
+    /**
+     * Bases the route is pointing at. These are probed every pass regardless of
+     * the budget, so the highlighted block tracks the wood as you break it.
+     */
+    private volatile Set<BlockPos> focus = Set.of();
 
     // ---- Aggregate measurements, accumulated automatically ----
     private double averageRegenSeconds = -1.0;
@@ -169,11 +262,23 @@ public class TreeRegenTracker {
     private double lastMeasurementSeconds = -1.0;
     private int regeneratedCount = 0;
 
-    /** Notified when a tree is fully chopped, so routes can be recorded. */
+    /** Notified when a tree is fully felled, so routes can be recorded. */
     private java.util.function.Consumer<BlockPos> chopListener = null;
 
     public void setChopListener(java.util.function.Consumer<BlockPos> listener) {
         this.chopListener = listener;
+    }
+
+    /**
+     * Tell the tracker which trees matter right now. Anything named here is
+     * probed on every pass; everything else waits its turn.
+     */
+    public void setFocus(Collection<BlockPos> bases) {
+        if (bases == null || bases.isEmpty()) {
+            focus = Set.of();
+            return;
+        }
+        focus = Set.copyOf(new HashSet<>(bases));
     }
 
     private int updateCounter = 0;
@@ -185,7 +290,10 @@ public class TreeRegenTracker {
 
     public void tick(Minecraft client) {
         if (client == null || client.player == null || client.level == null) {
-            trees.clear();
+            if (!trees.isEmpty()) {
+                trees.clear();
+                columnOwner.clear();
+            }
             return;
         }
 
@@ -238,6 +346,16 @@ public class TreeRegenTracker {
         return true;
     }
 
+    // ---- Discovery ----
+
+    private static int footprintRadius() {
+        return Math.max(0, Math.min(MAX_FOOTPRINT_RADIUS, BirchConfig.get().treeFootprint));
+    }
+
+    private static long columnKey(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xFFFFFFFFL);
+    }
+
     /**
      * Sweep for birch trunk bases: a birch log with a non-birch block beneath
      * it. Bounded by {@link #MAX_NEW_PER_SWEEP} so a dense grove cannot turn one
@@ -248,6 +366,7 @@ public class TreeRegenTracker {
             return;
         }
         BlockPos origin = client.player.blockPosition();
+        int radius = footprintRadius();
         int added = 0;
 
         for (int dy = -DISCOVER_BELOW; dy <= DISCOVER_ABOVE; dy++) {
@@ -266,13 +385,17 @@ public class TreeRegenTracker {
                         continue; // not the base of this trunk
                     }
 
-                    cursor.set(x, y, z);
-                    if (trees.containsKey(cursor) || isPartOfTrackedTrunk(x, y, z)) {
+                    // The base column already belongs to a tree, so this is a
+                    // second trunk of that same tree rather than a new one.
+                    if (columnOwner.containsKey(columnKey(x, z))) {
                         continue;
                     }
 
                     BlockPos base = new BlockPos(x, y, z);
-                    trees.put(base, new Tree(base, true));
+                    if (trees.containsKey(base)) {
+                        continue;
+                    }
+                    trees.put(base, new Tree(base, radius, claimColumns(base, radius)));
 
                     if (++added >= MAX_NEW_PER_SWEEP || trees.size() >= MAX_TREES) {
                         return;
@@ -283,31 +406,61 @@ public class TreeRegenTracker {
     }
 
     /**
-     * True if this candidate sits directly above an already-tracked base. A
-     * branch whose lowest log happens to have air beneath it would otherwise
-     * register the same tree a second time. Walking the column is a handful of
-     * O(1) map lookups, unlike scanning every tracked tree.
+     * Claim every free column in this tree's footprint.
+     *
+     * Columns already spoken for stay with their first owner, so a pair of
+     * trunks two blocks apart splits the ground between them instead of each
+     * seeing the other still standing. The base column is always claimed —
+     * discovery refuses to register a base whose column is taken.
      */
-    private boolean isPartOfTrackedTrunk(int x, int y, int z) {
-        for (int dy = 1; dy <= TRUNK_HEIGHT; dy++) {
-            cursor.set(x, y - dy, z);
-            if (trees.containsKey(cursor)) {
-                return true;
+    private int claimColumns(BlockPos base, int radius) {
+        int width = radius * 2 + 1;
+        int owned = 0;
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                long key = columnKey(base.getX() + dx, base.getZ() + dz);
+                BlockPos owner = columnOwner.get(key);
+                if (owner != null && !owner.equals(base)) {
+                    continue;
+                }
+                columnOwner.put(key, base);
+                owned |= 1 << cellIndex(dx, dz, radius, width);
             }
         }
-        return false;
+        return owned;
     }
 
-    /** Detect full-chop and regrowth transitions. */
+    private void releaseColumns(Tree tree) {
+        for (int dx = -tree.radius; dx <= tree.radius; dx++) {
+            for (int dz = -tree.radius; dz <= tree.radius; dz++) {
+                long key = columnKey(tree.base.getX() + dx, tree.base.getZ() + dz);
+                if (tree.base.equals(columnOwner.get(key))) {
+                    columnOwner.remove(key);
+                }
+            }
+        }
+    }
+
+    private static int cellIndex(int dx, int dz, int radius, int width) {
+        return (dx + radius) * width + (dz + radius);
+    }
+
+    // ---- Transitions ----
+
+    /** Detect full-fell and regrowth transitions on the trees due a probe. */
     private void updateTrees(Minecraft client) {
         long now = System.currentTimeMillis();
         BlockPos playerPos = client.player.blockPosition();
+        Set<BlockPos> focused = focus;
         int regrewThisPass = 0;
+        int budget = PROBE_BUDGET_PER_PASS;
 
         for (Iterator<Map.Entry<BlockPos, Tree>> it = trees.entrySet().iterator(); it.hasNext(); ) {
             Tree tree = it.next().getValue();
 
             if (playerPos.distSqr(tree.base) > FORGET_DISTANCE_SQ) {
+                releaseColumns(tree);
                 it.remove();
                 continue;
             }
@@ -318,10 +471,22 @@ public class TreeRegenTracker {
                 continue;
             }
 
-            boolean standing = probeTrunk(client, tree);
+            boolean urgent = focused.contains(tree.base);
+            if (!urgent) {
+                if (now < tree.nextProbeAt) {
+                    continue;
+                }
+                if (budget <= 0) {
+                    continue;
+                }
+                budget--;
+            }
+            tree.nextProbeAt = now + NORMAL_PROBE_INTERVAL_MS;
+
+            boolean standing = probeTree(client, tree, now);
 
             if (!tree.downed && tree.standing && !standing) {
-                // Fully downed: this is when the clock starts.
+                // Every column of this tree is empty: the clock starts now.
                 tree.downed = true;
                 tree.downedAt = now;
                 SessionStats.recordTreeChopped();
@@ -354,7 +519,10 @@ public class TreeRegenTracker {
 
                 tree.downed = false;
                 tree.downedAt = 0L;
-                tree.fullLogCount = tree.logCount;
+                tree.fullWoodCount = tree.woodCount;
+                // A regrown tree may come back a different shape, so re-learn
+                // which of its columns hold wood on the next probe.
+                tree.lastFullProbeAt = 0L;
             }
 
             tree.standing = standing;
@@ -367,81 +535,137 @@ public class TreeRegenTracker {
     }
 
     /**
-     * Scan this tree's trunk column, recording whether any log remains and
-     * where the highlight should sit.
+     * Scan this tree's owned columns, recording how much wood is left, where it
+     * is, and which block the marker should sit on.
      *
-     * The target is clamped into the span of logs that actually exist, so the
-     * marker can never float in the air above a short trunk or sit below the
-     * first log — it is always on wood while the tree is standing. A downed
-     * tree keeps its base, which is where it will regrow.
+     * The marker is always an actual log — the nearest one to the configured
+     * centre height, preferring the base column so it lands on the trunk rather
+     * than a branch. It can never float in the air or settle on a leaf, because
+     * only positions confirmed to hold birch are ever considered.
      *
-     * Costs at most {@link #TRUNK_HEIGHT} lookups and allocates nothing beyond
-     * the single BlockPos handed to the renderers when the target moves.
+     * @return true while any wood remains
      */
-    private boolean probeTrunk(Minecraft client, Tree tree) {
-        BlockPos base = tree.base;
-        int lowest = Integer.MAX_VALUE;
-        int highest = Integer.MIN_VALUE;
-        int mask = 0;
-        int count = 0;
+    private boolean probeTree(Minecraft client, Tree tree, long now) {
+        boolean full = !tree.probedOnce || (now - tree.lastFullProbeAt) >= FULL_PROBE_INTERVAL_MS;
+        int mask = full ? tree.ownedMask : tree.liveMask;
+        if (mask == 0) {
+            mask = tree.ownedMask;
+        }
 
-        for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
-            int y = base.getY() + dy;
-            cursor.set(base.getX(), y, base.getZ());
-            if (isBirchAt(client, cursor)) {
-                if (y < lowest) {
-                    lowest = y;
+        BlockPos base = tree.base;
+        int desired = base.getY() + BirchConfig.get().treeCenterHeight;
+        int radius = tree.radius;
+        int width = tree.width;
+
+        int count = 0;
+        int marks = 0;
+        int liveCells = 0;
+        int bestScore = Integer.MAX_VALUE;
+        int bestX = base.getX();
+        int bestY = base.getY();
+        int bestZ = base.getZ();
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int cell = cellIndex(dx, dz, radius, width);
+                if ((mask & (1 << cell)) == 0) {
+                    continue;
                 }
-                highest = y;
-                mask |= (1 << dy);
-                count++;
+                int x = base.getX() + dx;
+                int z = base.getZ() + dz;
+                boolean cellHasWood = false;
+
+                for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
+                    int y = base.getY() + dy;
+                    cursor.set(x, y, z);
+                    if (!isBirchAt(client, cursor)) {
+                        continue;
+                    }
+                    count++;
+                    cellHasWood = true;
+                    if (marks < MAX_WOOD_MARKS) {
+                        scratch[marks++] = BlockPos.asLong(x, y, z);
+                    }
+                    // Vertical closeness to the wanted height decides, with a
+                    // strong penalty for stepping off the trunk, so the marker
+                    // sits on the trunk whenever the trunk has wood at all.
+                    int score = Math.abs(y - desired) + (Math.abs(dx) + Math.abs(dz)) * 8;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestX = x;
+                        bestY = y;
+                        bestZ = z;
+                    }
+                }
+                if (cellHasWood) {
+                    liveCells |= 1 << cell;
+                }
             }
         }
 
-        tree.logCount = count;
-        tree.logMask = mask;
+        if (full) {
+            tree.lastFullProbeAt = now;
+            // Keep the base cell in the working set even when it is empty, so a
+            // felled tree is still watched where it will grow back.
+            int baseCell = 1 << cellIndex(0, 0, radius, width);
+            tree.liveMask = (liveCells | baseCell) & tree.ownedMask;
+        } else if (liveCells != 0) {
+            tree.liveMask |= liveCells;
+        }
+        tree.probedOnce = true;
 
-        if (highest == Integer.MIN_VALUE) {
+        tree.woodCount = count;
+        publishWood(tree, marks);
+
+        if (count == 0) {
             tree.target = base;
             tree.partiallyChopped = false;
             return false;
         }
 
-        // A tree only counts as partially chopped once it has lost logs it was
+        // A tree only counts as partially chopped once it has lost wood it was
         // previously seen to have. A tree discovered already short establishes
-        // that shorter height as its own full size, so untouched trees and
+        // that shorter size as its own full size, so untouched trees and
         // naturally stubby ones are never flagged.
-        if (count > tree.fullLogCount) {
-            tree.fullLogCount = count;
+        if (count > tree.fullWoodCount) {
+            tree.fullWoodCount = count;
         }
-        tree.partiallyChopped = !tree.downed && count > 0 && count < tree.fullLogCount;
-
-        // Clamping between the lowest and highest log only guarantees the
-        // target sits in that span, not that it is a log. A trunk with a gap —
-        // leaves poking through, or a partly chopped column — then puts the
-        // marker on a leaf. Pick the nearest position that actually holds wood.
-        int desired = base.getY() + BirchConfig.get().treeCenterHeight;
-        int targetY = highest;
-        int bestDistance = Integer.MAX_VALUE;
-
-        for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
-            if ((mask & (1 << dy)) == 0) {
-                continue;
-            }
-            int y = base.getY() + dy;
-            int distance = Math.abs(y - desired);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                targetY = y;
-            }
-        }
+        tree.partiallyChopped = !tree.downed && count < tree.fullWoodCount;
 
         BlockPos current = tree.target;
-        if (current == null || current.getY() != targetY
-                || current.getX() != base.getX() || current.getZ() != base.getZ()) {
-            tree.target = new BlockPos(base.getX(), targetY, base.getZ());
+        if (current == null || current.getX() != bestX
+                || current.getY() != bestY || current.getZ() != bestZ) {
+            tree.target = new BlockPos(bestX, bestY, bestZ);
         }
         return true;
+    }
+
+    /**
+     * Hand the renderers the remaining logs, reusing the previous array when
+     * nothing moved. A standing tree is probed several times a second and its
+     * wood rarely changes, so this keeps the steady state allocation-free.
+     */
+    private void publishWood(Tree tree, int marks) {
+        long[] previous = tree.wood;
+        if (previous != null && previous.length == marks) {
+            boolean same = true;
+            for (int i = 0; i < marks; i++) {
+                if (previous[i] != scratch[i]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                return;
+            }
+        }
+        if (marks == 0) {
+            tree.wood = NO_WOOD;
+            return;
+        }
+        long[] fresh = new long[marks];
+        System.arraycopy(scratch, 0, fresh, 0, marks);
+        tree.wood = fresh;
     }
 
     private void recordMeasurement(Tree tree, double seconds) {
@@ -473,6 +697,39 @@ public class TreeRegenTracker {
     private boolean isBirchAt(Minecraft client, BlockPos pos) {
         BlockState state = client.level.getBlockState(pos);
         return state.is(Blocks.BIRCH_LOG) || state.is(Blocks.BIRCH_WOOD);
+    }
+
+    // ---- Lookup ----
+
+    /**
+     * The tracked tree nearest to a coordinate, within {@code radius}.
+     *
+     * Routes are recorded as the coordinates trees had when they were felled,
+     * and a trunk's base is re-detected a block or two off after it regrows.
+     * Matching those by exact position — as the route planner used to — fails
+     * silently and leaves every recorded stop looking untracked, with no regen
+     * clock, no leftover wood and no real block to mark. Matching by proximity
+     * is the only thing that holds a recorded route to the ground.
+     */
+    public Tree findNear(int x, int y, int z, double radius) {
+        double bestDistSq = radius * radius;
+        Tree best = null;
+
+        for (Tree tree : trees.values()) {
+            double dx = tree.base.getX() - x;
+            double dy = tree.base.getY() - y;
+            double dz = tree.base.getZ() - z;
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq <= bestDistSq) {
+                bestDistSq = distSq;
+                best = tree;
+            }
+        }
+        return best;
+    }
+
+    public Tree findNear(BlockPos pos, double radius) {
+        return pos == null ? null : findNear(pos.getX(), pos.getY(), pos.getZ(), radius);
     }
 
     // ---- Queries used by the HUD, world renderer and commands ----
@@ -567,14 +824,14 @@ public class TreeRegenTracker {
 
     /** Seconds until a specific tree should regrow (0 = due now). */
     public double getSecondsUntilRegen(Tree tree) {
-        if (!tree.downed) {
+        if (tree == null || !tree.downed) {
             return -1.0;
         }
         double elapsed = (System.currentTimeMillis() - tree.downedAt) / 1000.0;
-        return Math.max(0.0, getRegenSeconds() - elapsed);
+        return Math.max(0.0, getExpectedRegenSeconds(tree) - elapsed);
     }
 
-    /** All trees currently chopped and regrowing. */
+    /** All trees currently felled and regrowing. */
     public List<Tree> getDownedTrees() {
         List<Tree> downed = new ArrayList<>();
         for (Tree tree : trees.values()) {
@@ -594,7 +851,7 @@ public class TreeRegenTracker {
         return trees.size();
     }
 
-    /** Soonest regen across all downed trees, or -1 if none are pending. */
+    /** Soonest regen across all felled trees, or -1 if none are pending. */
     public double getSoonestRegen() {
         double soonest = -1.0;
         for (Tree tree : trees.values()) {
@@ -609,20 +866,33 @@ public class TreeRegenTracker {
         return soonest;
     }
 
-    /** How many tracked trees are standing and choppable right now. */
+    /** How many tracked trees still have wood on them right now. */
     public int getReadyCount() {
         int ready = 0;
         for (Tree tree : trees.values()) {
-            if (!tree.downed && tree.standing) {
+            if (!tree.downed && tree.hasWood()) {
                 ready++;
             }
         }
         return ready;
     }
 
+    /** How many trees have been chopped into but not finished. */
+    public int getUnfinishedCount() {
+        int unfinished = 0;
+        for (Tree tree : trees.values()) {
+            if (tree.partiallyChopped) {
+                unfinished++;
+            }
+        }
+        return unfinished;
+    }
+
     /** Forget tracked trees and all measurements. */
     public void reset() {
         trees.clear();
+        columnOwner.clear();
+        focus = Set.of();
         averageRegenSeconds = -1.0;
         fastestRegenSeconds = -1.0;
         slowestRegenSeconds = -1.0;

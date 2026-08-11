@@ -84,10 +84,34 @@ public final class RouteLibrary {
                         double lapSeconds, double cycleSeconds, double treesPerMinute) {
     }
 
+    /**
+     * How long one lap really takes.
+     *
+     * Each leg is the time your own foraging has recorded for that hop where
+     * there is enough of it, and distance over your measured travel speed where
+     * there is not. Scoring a route by distance alone rates two loops of equal
+     * length equally even when one of them climbs a hill you walk every lap.
+     */
+    public static double lapSeconds(RecordedRoute route) {
+        if (route == null || route.size() < 2) {
+            return 0.0;
+        }
+        double speed = walkSpeed();
+        double total = 0.0;
+
+        for (int i = 0; i < route.points.size(); i++) {
+            RecordedRoute.Point from = route.points.get(i);
+            RecordedRoute.Point to = route.points.get((i + 1) % route.points.size());
+            double fallback = from.distanceTo(to) / speed;
+            total += TravelGraph.legSeconds(from.x, from.y, from.z, to.x, to.y, to.z, fallback);
+        }
+        return total;
+    }
+
     public static Score score(RecordedRoute route, double regenSeconds) {
         int stops = route.size();
         double distance = route.loopDistance();
-        double lap = distance / walkSpeed();
+        double lap = lapSeconds(route);
         // You cannot lap faster than the trees come back.
         double cycle = Math.max(lap, Math.max(regenSeconds, 0.001));
         double perMinute = stops / cycle * 60.0;
