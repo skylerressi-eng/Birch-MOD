@@ -316,8 +316,8 @@ public final class SessionStats {
     }
 
     public static void load() {
-        Path file = path();
         try {
+            Path file = path();
             if (Files.exists(file)) {
                 try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                     Lifetime loaded = GSON.fromJson(reader, Lifetime.class);
@@ -366,8 +366,8 @@ public final class SessionStats {
     }
 
     private static void write(Lifetime data) {
-        Path file = path();
         try {
+            Path file = path();
             Files.createDirectories(file.getParent());
             try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 GSON.toJson(data, writer);

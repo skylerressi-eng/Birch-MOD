@@ -89,7 +89,9 @@ public class BazaarManager {
             }
             lastUpdate = System.currentTimeMillis();
             status = "ok";
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            // A scheduled task that throws is cancelled and never runs again, so
+            // one bad response would leave prices frozen for the whole session.
             status = "error";
         }
     }

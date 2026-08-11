@@ -213,8 +213,12 @@ public final class RouteLibrary {
     }
 
     public static void load() {
-        Path file = path();
         try {
+            // Resolving the config directory is itself a call that can fail,
+            // so it belongs inside the guard rather than in front of it — the
+            // promise this makes is that a bad path costs you a route, not the
+            // rest of the tick.
+            Path file = path();
             if (Files.exists(file)) {
                 try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                     Store loaded = GSON.fromJson(reader, Store.class);
@@ -250,6 +254,9 @@ public final class RouteLibrary {
             if (route.points == null) {
                 route.points = new ArrayList<>();
             }
+            if (!Double.isFinite(route.bestLapSeconds) || route.bestLapSeconds <= 0.0) {
+                route.bestLapSeconds = -1.0;
+            }
             int repeats = route.dedupe();
             if (repeats > 0) {
                 LOGGER.info("Route '{}' listed {} tree(s) more than once; repeats removed.",
@@ -259,8 +266,8 @@ public final class RouteLibrary {
     }
 
     public static void persist() {
-        Path file = path();
         try {
+            Path file = path();
             Files.createDirectories(file.getParent());
             try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 GSON.toJson(store, writer);

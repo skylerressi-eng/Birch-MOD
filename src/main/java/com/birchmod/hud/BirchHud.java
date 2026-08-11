@@ -7,6 +7,8 @@ import java.util.List;
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.LeaderboardManager;
 import com.birchmod.config.BirchConfig;
+import com.birchmod.BirchMod;
+import com.birchmod.route.LapTracker;
 import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.Stop;
 import com.birchmod.stats.SessionStats;
@@ -151,6 +153,10 @@ public class BirchHud implements HudElement {
 
         if (config.showRoute && config.routeEnabled) {
             lines.add(routeLine());
+            Line lap = lapLine(config);
+            if (lap != null) {
+                lines.add(lap);
+            }
         }
 
         if (config.showSession) {
@@ -179,6 +185,33 @@ public class BirchHud implements HudElement {
         return lines;
     }
 
+    /**
+     * How this lap is going against your best.
+     *
+     * The only line on the HUD that reports a result rather than a prediction,
+     * so it is the one worth watching. Hidden entirely when no route is being
+     * followed, because there is nothing to lap.
+     */
+    private Line lapLine(BirchConfig config) {
+        LapTracker laps = BirchMod.lapTracker;
+        if (!config.showLap || laps == null || laps.getLapSize() <= 0) {
+            return null;
+        }
+
+        double elapsed = laps.getElapsedSeconds();
+        if (elapsed < 0.0) {
+            return null;
+        }
+
+        double best = LapTracker.bestLapForActive();
+        String progress = laps.getProgress() + "/" + laps.getLapSize();
+        String bestNote = best > 0.0 ? " (best " + LapTracker.format(best) + ")" : "";
+
+        // Amber once this lap has already taken longer than your best one.
+        int colour = (best > 0.0 && elapsed > best) ? COLOR_GOLD : COLOR_AQUA;
+        return new Line("Lap " + progress + ": " + LapTracker.format(elapsed) + bestNote, colour);
+    }
+
     /** Distance and wait for the next stop on the planned route. */
     private Line routeLine() {
         Stop next = routeBuilder.getNext();
@@ -192,6 +225,16 @@ public class BirchHud implements HudElement {
                 : 0.0;
 
         String range = INT_FMT.format(distance) + "m";
+
+        // Where in the loop this stop is, so a long route stops feeling
+        // like an endless line of identical trees.
+        int index = routeBuilder.getRecordedIndex();
+        if (index >= 0) {
+            com.birchmod.route.RecordedRoute active = com.birchmod.route.RouteLibrary.getActive();
+            if (active != null) {
+                range = (index + 1) + "/" + active.size() + ", " + range;
+            }
+        }
 
         // A trunk you chopped into and walked away from is the one thing worth
         // shouting about — it is free birch standing where you already are.

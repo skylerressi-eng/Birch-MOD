@@ -190,8 +190,28 @@ public final class BirchCommand {
                 }))
 
                 // /birch help
+                // /birch lap <on|off>
+                .then(ClientCommands.literal("lap")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().showLap = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            feedback(ctx.getSource(), "§7Lap timer: " + onOff(BirchConfig.get().showLap));
+                            return 1;
+                        })))
+
+                // /birch leftovers <on|off>
+                .then(ClientCommands.literal("leftovers")
+                        .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
+                            BirchConfig.get().notifyLeftovers = BoolArgumentType.getBool(ctx, "enabled");
+                            BirchConfig.save();
+                            feedback(ctx.getSource(), "§7Unfinished-tree nudges: "
+                                    + onOff(BirchConfig.get().notifyLeftovers));
+                            return 1;
+                        })))
+
+                // /birch help
                 .then(ClientCommands.literal("help").executes(ctx -> {
-                    help(ctx.getSource());
+                    Help.birch(ctx.getSource());
                     return 1;
                 })));
     }
@@ -308,31 +328,6 @@ public final class BirchCommand {
         } else {
             feedback(source, "§8Full stack traces are in your latest.log — search 'BirchOptimizer'.");
         }
-    }
-
-    private static void help(FabricClientCommandSource source) {
-        header(source);
-        feedback(source, "§f/birch §7— overview");
-        feedback(source, "§f/birch stats §7— session + lifetime totals");
-        feedback(source, "§f/birch bazaar §7— live prices and spreads");
-        feedback(source, "§f/birch reset §7— clear session counters");
-        feedback(source, "§f/birch hud <true|false> §7— toggle overlay");
-        feedback(source, "§f/birch hud pos <x> <y> §7— move overlay");
-        feedback(source, "§f/birch hud scale <0.5-3.0> §7— resize overlay");
-        feedback(source, "§f/birch hud bg <true|false> §7— overlay backdrop");
-        feedback(source, "§f/birch notify <true|false> §7— ready alerts");
-        feedback(source, "§f/birch notify sound <true|false> §7— alert sound");
-        feedback(source, "§f/birch tax <true|false> §7— Bazaar tax in projections");
-        feedback(source, "§f/birch skyblockonly <true|false> §7— hide outside Skyblock");
-        feedback(source, "§f/birch apikey <key> §7· §f/birch name <username>");
-        feedback(source, "§f/timer mode §7— toggle floating tree timers");
-        feedback(source, "§f/route §7— show the planned route");
-        feedback(source, "§f/route <true|false> §7— toggle route overlay");
-        feedback(source, "§f/route path <true|false> §7— whole path vs next tree only");
-        feedback(source, "§f/route tracers <true|false> §7· §f/route chain <true|false>");
-        feedback(source, "§f/route length <1-16> §7· §f/route center <0-12>");
-        feedback(source, "§f/birch safemode <true|false> §7— disable in-world rendering");
-        feedback(source, "§f/birch diag §7— report component failures");
     }
 
     private static void header(FabricClientCommandSource source) {

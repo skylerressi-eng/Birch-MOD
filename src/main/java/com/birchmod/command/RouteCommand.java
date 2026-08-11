@@ -3,6 +3,8 @@ package com.birchmod.command;
 import java.text.DecimalFormat;
 
 import com.birchmod.config.BirchConfig;
+import com.birchmod.BirchMod;
+import com.birchmod.route.LapTracker;
 import com.birchmod.route.RecordedRoute;
 import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
@@ -128,6 +130,10 @@ public final class RouteCommand {
                         })))
                 .then(ClientCommands.literal("stats").executes(ctx -> {
                     learned(ctx.getSource());
+                    return 1;
+                }))
+                .then(ClientCommands.literal("help").executes(ctx -> {
+                    Help.route(ctx.getSource());
                     return 1;
                 }))
                 .then(ClientCommands.literal("auto").executes(ctx -> {
@@ -346,8 +352,11 @@ public final class RouteCommand {
         for (RecordedRoute route : routes) {
             RouteLibrary.Score score = RouteLibrary.score(route, regenSeconds);
             String marker = route.name.equalsIgnoreCase(active) ? "§a> " : "§7  ";
+            String best = route.bestLapSeconds > 0.0
+                    ? " §8· best lap §f" + LapTracker.format(route.bestLapSeconds)
+                    : " §8· never lapped";
             feedback(source, marker + "§f" + route.name + " §7— " + score.stops() + " stops, "
-                    + SEC_FMT.format(score.treesPerMinute()) + " trees/min");
+                    + SEC_FMT.format(score.treesPerMinute()) + " trees/min" + best);
         }
         feedback(source, "§8Scored against a " + SEC_FMT.format(regenSeconds) + "s regen. "
                 + "§f/route best§8 picks the top one.");
@@ -406,6 +415,38 @@ public final class RouteCommand {
         if (percent < 60) {
             feedback(source, "§8  Well under plan — walking the loop slower than assumed, "
                     + "or trees are being missed.");
+        }
+        laps(source, active);
+    }
+
+    /**
+     * Laps actually walked. The predicted figures above are a model; this is
+     * the clock, and it is the only line that can tell you whether a change you
+     * made to the route helped.
+     */
+    private static void laps(FabricClientCommandSource source, RecordedRoute active) {
+        LapTracker tracker = BirchMod.lapTracker;
+        if (tracker == null) {
+            return;
+        }
+        double best = active.bestLapSeconds;
+
+        if (tracker.getLapsCompleted() == 0) {
+            feedback(source, best > 0.0
+                    ? "§7  Best lap: §f" + LapTracker.format(best) + " §8(from an earlier session)"
+                    : "§8  No full lap yet — finish " + active.size()
+                            + " trees on this route to time one.");
+        } else {
+            feedback(source, "§7  Laps: §f" + tracker.getLapsCompleted()
+                    + "§7 · last §f" + LapTracker.format(tracker.getLastLapSeconds())
+                    + "§7 · avg §f" + LapTracker.format(tracker.getAverageLapSeconds())
+                    + "§7 · best §a" + LapTracker.format(best));
+        }
+
+        double elapsed = tracker.getElapsedSeconds();
+        if (elapsed >= 0.0 && tracker.getLapSize() > 0) {
+            feedback(source, "§7  This lap: §f" + tracker.getProgress() + "/" + tracker.getLapSize()
+                    + " trees, " + LapTracker.format(elapsed) + " so far");
         }
     }
 

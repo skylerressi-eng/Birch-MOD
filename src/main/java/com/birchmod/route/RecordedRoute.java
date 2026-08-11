@@ -39,6 +39,15 @@ public final class RecordedRoute {
     public List<Point> points = new ArrayList<>();
     public long recordedAt = 0L;
 
+    /**
+     * The quickest full lap ever walked on this route, in seconds, or -1.
+     *
+     * Kept on the route rather than in the session, because it is the number
+     * you come back to beat. Routes saved before this existed simply have no
+     * best yet, which is exactly what -1 means.
+     */
+    public double bestLapSeconds = -1.0;
+
     public RecordedRoute() {
     }
 

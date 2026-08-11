@@ -11,12 +11,14 @@ import com.birchmod.input.Keybinds;
 import com.birchmod.render.TracerRenderer;
 import com.birchmod.render.TreeTimerRenderer;
 import com.birchmod.route.RouteBuilder;
+import com.birchmod.route.LapTracker;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteRecorder;
 import com.birchmod.route.TravelGraph;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
 import com.birchmod.tracking.CollectionRankTracker;
+import com.birchmod.tracking.LeftoverWatch;
 import com.birchmod.tracking.MovementTracker;
 import com.birchmod.tracking.TreeRegenTracker;
 import com.birchmod.util.Guard;
@@ -66,6 +68,8 @@ public class BirchMod implements ClientModInitializer {
     public static RouteBuilder routeBuilder;
     public static RouteRecorder routeRecorder;
     public static MovementTracker movementTracker;
+    public static LapTracker lapTracker;
+    public static LeftoverWatch leftoverWatch;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("BirchOptimizer");
 
@@ -86,12 +90,19 @@ public class BirchMod implements ClientModInitializer {
         routeBuilder = new RouteBuilder(regenTracker);
         routeRecorder = new RouteRecorder();
         movementTracker = new MovementTracker();
+        lapTracker = new LapTracker();
+        leftoverWatch = new LeftoverWatch(regenTracker);
         // Felling a tree is the one unambiguous signal in the whole mod: it
         // says which tree, in what order, and — with the previous one — how
         // long that leg really took.
         regenTracker.setChopListener(base -> {
             routeRecorder.onTreeChopped(base);
             TravelGraph.onTreeChopped(base);
+
+            double lap = lapTracker.onTreeChopped();
+            if (lap > 0.0) {
+                announceLap(lap);
+            }
         });
 
         // Both API managers poll on their own 10-minute schedule.
@@ -115,6 +126,7 @@ public class BirchMod implements ClientModInitializer {
             });
             Guard.run("collection-rank", () -> collectionRank.tick(client));
             Guard.run("movement", () -> movementTracker.tick(client));
+            Guard.run("leftovers", () -> leftoverWatch.tick(client));
             Guard.run("route-builder", () -> {
                 if (client.player != null) {
                     routeBuilder.update(client.player.position());
@@ -156,6 +168,23 @@ public class BirchMod implements ClientModInitializer {
         RouteCommand.register(routeBuilder, routeRecorder, regenTracker);
     }
 
+    /**
+     * Announce a completed lap, and say whether it was your quickest.
+     *
+     * A lap time nobody sees is a lap time nobody acts on, and the moment it
+     * lands is the only moment it means anything.
+     */
+    private static void announceLap(double seconds) {
+        double best = LapTracker.bestLapForActive();
+        boolean record = best > 0.0 && Math.abs(best - seconds) < 1.0e-9;
+
+        com.birchmod.util.Notifier.actionBar(record
+                ? "§6§lBEST LAP §e" + LapTracker.format(seconds)
+                : "§aLap " + lapTracker.getLapsCompleted() + " §f"
+                        + LapTracker.format(seconds)
+                        + " §8(best " + LapTracker.format(best) + ")");
+    }
+
     /** Clear all session-scoped counters. Shared by the keybind and command. */
     public static void resetSession() {
         if (tracker != null) {
@@ -166,6 +195,12 @@ public class BirchMod implements ClientModInitializer {
         }
         if (collectionRank != null) {
             collectionRank.reset();
+        }
+        if (lapTracker != null) {
+            lapTracker.resetSession();
+        }
+        if (leftoverWatch != null) {
+            leftoverWatch.reset();
         }
         SessionStats.resetSession();
         SessionStats.save();

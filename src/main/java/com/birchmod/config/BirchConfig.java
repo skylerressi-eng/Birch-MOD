@@ -39,6 +39,8 @@ public final class BirchConfig {
     public boolean showSession = true;
     public boolean showCollectionRank = true;
     public boolean showLeaderboard = true;
+    /** Live lap timer against your best lap on the active route. */
+    public boolean showLap = true;
 
     // ---- Bazaar ----
     /** Show insta-buy price (true) or insta-sell price (false). */
@@ -114,6 +116,12 @@ public final class BirchConfig {
 
     // ---- Notifications ----
     public boolean notifyOnReady = true;
+    /**
+     * Say something on the action bar when you walk away from a trunk you did
+     * not finish. Each trunk is mentioned once, and only once you have really
+     * left it.
+     */
+    public boolean notifyLeftovers = true;
     public boolean notifySound = true;
     public double notifyVolume = 0.6;
     public double notifyCooldownSeconds = 3.0;
@@ -133,8 +141,8 @@ public final class BirchConfig {
     }
 
     public static void load() {
-        Path file = path();
         try {
+            Path file = path();
             if (Files.exists(file)) {
                 try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                     BirchConfig loaded = GSON.fromJson(reader, BirchConfig.class);
@@ -171,8 +179,8 @@ public final class BirchConfig {
     }
 
     public static void save() {
-        Path file = path();
         try {
+            Path file = path();
             Files.createDirectories(file.getParent());
             try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 GSON.toJson(instance, writer);

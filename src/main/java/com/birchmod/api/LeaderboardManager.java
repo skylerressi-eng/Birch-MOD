@@ -110,7 +110,9 @@ public class LeaderboardManager {
                 status = "ok";
             }
             lastUpdate = System.currentTimeMillis();
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            // A scheduled task that throws is cancelled and never runs again, so
+            // one bad response would leave prices frozen for the whole session.
             status = "error";
         }
     }
