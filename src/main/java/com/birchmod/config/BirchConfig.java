@@ -132,6 +132,15 @@ public final class BirchConfig {
      * single column misses.
      */
     public int treeFootprint = 1;
+    /**
+     * Birch within reach of a spot before it is treated as somewhere to chop.
+     *
+     * 2 takes anything that is more than one lone log — trunks and the piles of
+     * logs lying on the ground alike — while leaving single decorative logs
+     * alone. Set it to 1 to route to every piece of birch there is, or higher
+     * if the scenery where you forage keeps earning markers.
+     */
+    public int minTreeLogs = 2;
     /** Width of tracer and highlight lines, in pixels. */
     public double lineWidth = 4.0;
     /** Fill the block to mine with translucent colour, not just an outline. */
@@ -213,6 +222,7 @@ public final class BirchConfig {
         routeLength = Math.max(1, Math.min(MAX_ROUTE_LENGTH, routeLength));
         treeCenterHeight = Math.max(0, Math.min(12, treeCenterHeight));
         treeFootprint = Math.max(0, Math.min(2, treeFootprint));
+        minTreeLogs = Math.max(1, Math.min(8, minTreeLogs));
         lineWidth = Math.max(0.5, Math.min(10.0, lineWidth));
         if (bazaarProductId == null || bazaarProductId.isBlank()) {
             bazaarProductId = "BIRCH_LOG";

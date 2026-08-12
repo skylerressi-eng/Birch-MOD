@@ -128,6 +128,20 @@ public final class RouteCommand {
                                     + "from a tree with wood still on it.");
                             return 1;
                         })))
+                .then(ClientCommands.literal("minlogs")
+                        .then(ClientCommands.argument("logs", IntegerArgumentType.integer(1, 8))
+                                .executes(ctx -> {
+                                    int logs = IntegerArgumentType.getInteger(ctx, "logs");
+                                    BirchConfig.get().minTreeLogs = logs;
+                                    BirchConfig.save();
+                                    feedback(ctx.getSource(), "§7Marking anything with §f" + logs
+                                            + "§7 or more birch within reach.");
+                                    feedback(ctx.getSource(), logs <= 1
+                                            ? "§8  Every piece of birch counts, decoration included."
+                                            : "§8  Trunks and log piles count; single stray logs do not.");
+                                    feedback(ctx.getSource(), "§8  Walk away and back to re-scan.");
+                                    return 1;
+                                })))
                 .then(ClientCommands.literal("stats").executes(ctx -> {
                     learned(ctx.getSource());
                     return 1;

@@ -88,20 +88,23 @@ public class TreeRegenTracker {
     public static final int TRUNK_SPAN = TRUNK_HEIGHT;
 
     /**
-     * Logs that have to be stacked before something counts as a tree.
+     * Birch that has to be within reach of a candidate before it counts as
+     * something worth routing to.
      *
-     * A birch log with a non-birch block under it was the whole test, and the
-     * Park is full of birch that is not a tree: log piles, fence posts, half
-     * buried decoration, the odd stub of branch sitting outside a trunk's
-     * footprint. Every one of those registered as its own tree and earned its
-     * own marker, which is why markers came in clusters around a single trunk.
+     * The original test was "a birch log with a non-birch block under it",
+     * which is true of most of the birch in the Park and put markers on the
+     * scenery. The correction — several logs stacked on each other — was too
+     * strict in the other direction, because the Park's harvestable birch is
+     * not all shaped like a trunk. Piles of logs lying on the ground are
+     * choppable and regenerate exactly like a tree, and requiring height
+     * excluded every one of them.
      *
-     * A trunk is several logs standing on top of each other. The cost is that a
-     * tree already chopped down to a stump when you first walk past it is not
-     * picked up until it regrows, which is a far better failure than putting
-     * route markers on the scenery.
+     * So the test is quantity, not shape: wood stacked above the candidate or
+     * lying beside it both count. A trunk qualifies on its height, a pile on
+     * its spread, and a single log dropped on its own as decoration qualifies
+     * on neither.
      */
-    private static final int MIN_TRUNK_LOGS = 3;
+    private static final int NEIGHBOUR_PROBE_HEIGHT = 2;
 
     /** Upper bound on the configurable footprint, so the cell mask fits an int. */
     private static final int MAX_FOOTPRINT_RADIUS = 2;
@@ -486,8 +489,9 @@ public class TreeRegenTracker {
                         continue; // not the base of this trunk
                     }
 
-                    // Decoration is not a tree. See MIN_TRUNK_LOGS.
-                    if (!isTrunk(sampler, x, y, z)) {
+                    // A lone decorative log is not worth routing to; a trunk
+                    // or a pile of logs is. See NEIGHBOUR_PROBE_HEIGHT.
+                    if (!isHarvestable(sampler, x, y, z, BirchConfig.get().minTreeLogs)) {
                         continue;
                     }
 
@@ -553,17 +557,45 @@ public class TreeRegenTracker {
     }
 
     /**
-     * Whether a run of logs tall enough to be a trunk starts here.
+     * Whether there is enough birch here to be worth a marker.
      *
-     * @param x the base position, already known to hold birch with non-birch beneath
+     * Counts the candidate, what is stacked on it, and what lies beside it, so
+     * a trunk qualifies on its height and a pile of logs on the ground
+     * qualifies on its spread. Six extra block reads per candidate.
+     *
+     * @param x       a position already known to hold birch with non-birch beneath
+     * @param minLogs birch needed within reach, the candidate included
      */
-    static boolean isTrunk(WoodSampler sampler, int x, int y, int z) {
-        for (int dy = 1; dy < MIN_TRUNK_LOGS; dy++) {
-            if (!sampler.isWood(x, y + dy, z)) {
-                return false;
+    static boolean isHarvestable(WoodSampler sampler, int x, int y, int z, int minLogs) {
+        if (minLogs <= 1) {
+            return true;
+        }
+        int found = 1;
+
+        // Standing up: a trunk.
+        for (int dy = 1; dy <= NEIGHBOUR_PROBE_HEIGHT; dy++) {
+            if (sampler.isWood(x, y + dy, z)) {
+                found++;
             }
         }
-        return true;
+        if (found >= minLogs) {
+            return true;
+        }
+
+        // Lying down: a pile.
+        if (sampler.isWood(x + 1, y, z)) {
+            found++;
+        }
+        if (sampler.isWood(x - 1, y, z)) {
+            found++;
+        }
+        if (sampler.isWood(x, y, z + 1)) {
+            found++;
+        }
+        if (sampler.isWood(x, y, z - 1)) {
+            found++;
+        }
+        return found >= minLogs;
     }
 
     // ---- Transitions ----
