@@ -22,6 +22,21 @@ public final class BirchConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "birchoptimizer.json";
 
+    /**
+     * Bumped when a default changes in a way an existing settings file would
+     * otherwise override forever.
+     */
+    private static final int CURRENT_VERSION = 2;
+
+    /**
+     * Which set of defaults this file was written against.
+     *
+     * Starts at zero rather than the current version on purpose: a file saved
+     * before this field existed has no value for it, and Gson leaves the
+     * initialiser in place, so zero is exactly what an old file reads as.
+     */
+    public int configVersion = 0;
+
     // ---- HUD ----
     public boolean hudEnabled = true;
     public int hudX = 5;
@@ -155,8 +170,24 @@ public final class BirchConfig {
             // Corrupt or unreadable config: keep defaults rather than crashing.
             instance = new BirchConfig();
         }
+        instance.migrate();
         instance.clamp();
         save();
+    }
+
+    /**
+     * Bring an older settings file up to the current defaults.
+     *
+     * Changing a default only helps people who have never run the mod: everyone
+     * else has the old value written to disk, where it quietly wins forever.
+     * Drawing the whole loop was the default once, and it is the reason a dense
+     * grove filled up with lines to trees you were not going to next.
+     */
+    private void migrate() {
+        if (configVersion < 2) {
+            showFullPath = false;
+        }
+        configVersion = CURRENT_VERSION;
     }
 
     /** Keep hand-edited values inside sane bounds. */

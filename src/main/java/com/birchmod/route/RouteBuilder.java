@@ -110,15 +110,30 @@ public final class RouteBuilder {
         return within(a.base(), b.base()) || within(a.center(), b.center());
     }
 
+    /**
+     * Whether two positions are on the same tree.
+     *
+     * Measured across the ground, not through the air. A tree is a vertical
+     * thing: the base of a trunk and a log six blocks up it are the same tree,
+     * but they are six blocks apart, so a straight-line test called them
+     * different stops and drew a box on each — with a line running in and out
+     * of both, which is where four lines on one trunk came from.
+     *
+     * Horizontally, the same tolerance the rest of the mod uses for tree
+     * identity. Vertically, anything within a trunk's height, since two trees
+     * cannot be stacked on each other.
+     */
     private static boolean within(BlockPos a, BlockPos b) {
         if (a == null || b == null) {
             return false;
         }
         double dx = a.getX() - b.getX();
-        double dy = a.getY() - b.getY();
         double dz = a.getZ() - b.getZ();
-        return dx * dx + dy * dy + dz * dz
-                <= TreeRegenTracker.SAME_TREE_RADIUS * TreeRegenTracker.SAME_TREE_RADIUS;
+        if (dx * dx + dz * dz
+                > TreeRegenTracker.SAME_TREE_RADIUS * TreeRegenTracker.SAME_TREE_RADIUS) {
+            return false;
+        }
+        return Math.abs(a.getY() - b.getY()) <= TreeRegenTracker.TRUNK_SPAN;
     }
 
     private static List<BlockPos> focusBases(List<Stop> stops) {

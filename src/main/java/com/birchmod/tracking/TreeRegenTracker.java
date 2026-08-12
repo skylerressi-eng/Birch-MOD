@@ -79,6 +79,15 @@ public class TreeRegenTracker {
     private static final int TRUNK_HEIGHT = 12;
 
     /**
+     * How far apart in height two positions can be and still be one tree.
+     *
+     * The same figure as the trunk height, named separately because callers
+     * outside the tracker use it to decide whether two markers are on the same
+     * trunk rather than to bound a scan.
+     */
+    public static final int TRUNK_SPAN = TRUNK_HEIGHT;
+
+    /**
      * Logs that have to be stacked before something counts as a tree.
      *
      * A birch log with a non-birch block under it was the whole test, and the
