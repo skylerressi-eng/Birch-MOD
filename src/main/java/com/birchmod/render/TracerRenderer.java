@@ -27,9 +27,13 @@ import org.joml.Matrix4f;
  *
  * <ul>
  *   <li>a green highlight on the block to mine — an actual log of the trunk,</li>
- *   <li>a tracer from the player to the next tree, and</li>
- *   <li>chained tracers hopping from that block to each subsequent stop.</li>
+ *   <li>a tracer from the player to that block, and</li>
+ *   <li>a blue line onward to the next tree, so the way on is visible before
+ *       the tree you are standing at is down.</li>
  * </ul>
+ *
+ * Two stops are drawn by default. With {@code /route path true} the whole
+ * planned loop is drawn instead.
  *
  * Tracers originate at the highlighted block, so line and marker always agree
  * on where the tree is.
@@ -47,6 +51,9 @@ public class TracerRenderer {
 
     /** Alpha of the solid block fill. Low enough to still see the wood. */
     private static final int FILL_ALPHA = 90;
+
+    /** Stops drawn normally: the one to chop, and the one after it. */
+    private static final int NEXT_TREE_STOPS = 2;
 
     private static final float TEXT_SCALE = 0.025f;
     private static final int FULL_BRIGHT = 0xF000F0;
@@ -129,11 +136,14 @@ public class TracerRenderer {
             return;
         }
 
-        // Draw only the tree being headed to unless the full path is asked for.
-        // The planner still looks further ahead; this is purely what is shown.
-        List<Stop> route = config.showFullPath
-                ? planned
-                : planned.subList(0, 1);
+        // The tree to chop, and the one after it. Two stops is the whole point:
+        // one box says what to mine, and one blue line says where you are going
+        // when it is down. Drawing only the current tree leaves nothing
+        // pointing onward, and drawing the whole loop fills a dense grove with
+        // lines to trees you are not going to next. The planner still looks
+        // further ahead than this; that lookahead is what lets a stop still
+        // regrowing be stepped over, and it is separate from what gets drawn.
+        List<Stop> route = planned.subList(0, stopsToDraw(config.showFullPath, planned.size()));
 
         Camera camera = client.gameRenderer.getMainCamera();
         Vec3 cam = camera.position();
@@ -171,6 +181,21 @@ public class TracerRenderer {
         if (config.showRouteLabels) {
             drawLabels(buffers, poseStack, client, camera, cam, route);
         }
+    }
+
+    /**
+     * How many stops to draw.
+     *
+     * Worth having on its own because both wrong answers have shipped. Drawing
+     * one stop leaves nothing pointing onward — the line to the next tree comes
+     * from having a next tree to draw it to. Drawing the whole loop fills a
+     * dense grove with lines to trees you are not going to next.
+     */
+    static int stopsToDraw(boolean showFullPath, int planned) {
+        if (planned <= 0) {
+            return 0;
+        }
+        return showFullPath ? planned : Math.min(NEXT_TREE_STOPS, planned);
     }
 
     /** Green when ready to chop, amber while regrowing, blue for later stops. */
@@ -213,11 +238,12 @@ public class TracerRenderer {
         drawLine(lines, matrix, poseStack, start, points[0], cam,
                 rgb[0], rgb[1], rgb[2], 255, width);
 
-        // Chaining only means anything when the full path is being drawn.
-        if (!config.showFullPath || !config.chainTracers) {
+        if (!config.chainTracers) {
             return;
         }
-        // Chain onward: each tracer pings off the previous tree's block.
+        // Onward from the block you are mining to the next tree, so the way on
+        // is visible before you have finished the tree you are standing at.
+        // With the full path off this is a single line to a single tree.
         for (int i = 0; i < points.length - 1; i++) {
             drawLine(lines, matrix, poseStack, points[i], points[i + 1], cam,
                     CHAIN_R, CHAIN_G, CHAIN_B, 190, width);

@@ -43,9 +43,9 @@ final class Help {
 
         header(source, "What you see");
         entry(source, "/route <true|false>", "the route overlay as a whole");
-        entry(source, "/route tracers <true|false>", "the line to the next tree");
-        entry(source, "/route path <true|false>", "draw the whole loop, or only the next tree");
-        entry(source, "/route chain <true|false>", "link the stops when the whole path is shown");
+        entry(source, "/route tracers <true|false>", "the line from you to the tree you are chopping");
+        entry(source, "/route path <true|false>", "draw the whole loop, or just this tree and the next");
+        entry(source, "/route chain <true|false>", "the blue line onward to the next tree");
         entry(source, "/route labels <true|false>", "numbered labels above each stop");
         entry(source, "/route filled <true|false>", "fill the block to mine, or outline it only");
         entry(source, "/route width <0.5-10>", "line thickness");

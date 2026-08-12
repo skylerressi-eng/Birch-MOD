@@ -176,8 +176,9 @@ public final class RouteCommand {
                             BirchConfig.get().showFullPath = BoolArgumentType.getBool(ctx, "enabled");
                             BirchConfig.save();
                             feedback(ctx.getSource(), BirchConfig.get().showFullPath
-                                    ? "§7Showing the §fwhole path§7."
-                                    : "§7Showing §fonly the next tree§7.");
+                                    ? "§7Showing the §fwhole loop§7."
+                                    : "§7Showing the §ftree you are on§7 and a blue line "
+                                            + "to the §fnext one§7.");
                             return 1;
                         })))
                 .then(ClientCommands.literal("chain")

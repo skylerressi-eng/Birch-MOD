@@ -93,14 +93,16 @@ public final class BirchConfig {
     public boolean routeEnabled = true;
     /** Draw tracer lines to the route. */
     public boolean tracersEnabled = true;
-    /** Chain tracers between successive stops, not just to the next one. */
+    /** Draw the blue line onward from the tree you are chopping to the next one. */
     public boolean chainTracers = true;
     /**
-     * Draw the whole planned path, or only the tree you are heading to.
+     * Draw the whole planned loop, rather than just the tree you are chopping
+     * and the one after it.
      *
-     * Planning still looks several stops ahead either way — that lookahead is
-     * what lets a stop still regrowing be stepped over — but by default only
-     * the next tree is drawn, so the view stays clear.
+     * Planning looks several stops ahead either way — that lookahead is what
+     * lets a stop still regrowing be stepped over — but only two stops are
+     * drawn, because a dense grove with a line to every planned tree is not
+     * readable.
      */
     public boolean showFullPath = false;
     /** How many stops to plan ahead. */
