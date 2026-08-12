@@ -54,12 +54,71 @@ public final class RouteBuilder {
         boolean recorded = active != null && active.size() >= RouteLibrary.MIN_STOPS;
         followingRecorded = recorded;
 
-        List<Stop> next = recorded
+        List<Stop> next = distinct(recorded
                 ? follower.plan(active, playerPos)
-                : planner.plan(playerPos);
+                : planner.plan(playerPos));
 
         route = List.copyOf(next);
         regenTracker.setFocus(focusBases(next));
+    }
+
+    /**
+     * One tree, one marker.
+     *
+     * Both planners can hand back two stops standing on the same trunk, for
+     * different reasons: a recorded route can list a tree twice because it
+     * regrew a block over between recordings, and the tracker can register one
+     * physical tree more than once when part of it sits outside the footprint
+     * its base claimed. Either way the result on screen is a cluster of boxes
+     * on a single tree joined by lines that go nowhere, which reads as several
+     * stops when it is one.
+     *
+     * Filtering here rather than in each planner means it holds however a stop
+     * arrived, including from whatever gets written next.
+     */
+    static List<Stop> distinct(List<Stop> stops) {
+        List<Stop> kept = new ArrayList<>(stops.size());
+
+        for (Stop candidate : stops) {
+            boolean duplicate = false;
+            for (Stop existing : kept) {
+                if (isSameTree(existing, candidate)) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) {
+                continue;
+            }
+            // Renumber, so the labels stay 1, 2, 3 with no gaps where a
+            // duplicate was dropped.
+            kept.add(new Stop(candidate.tree(), candidate.base(), candidate.center(),
+                    candidate.etaSeconds(), kept.size() + 1,
+                    candidate.woodLeft(), candidate.unfinished()));
+        }
+        return kept;
+    }
+
+    private static boolean isSameTree(Stop a, Stop b) {
+        // The tracker's own identity is the strongest evidence there is.
+        if (a.tree() != null && a.tree() == b.tree()) {
+            return true;
+        }
+        // Otherwise go by where the marker actually lands, since that is what
+        // the player sees. Two markers this close are on one tree whatever the
+        // bookkeeping says about them.
+        return within(a.base(), b.base()) || within(a.center(), b.center());
+    }
+
+    private static boolean within(BlockPos a, BlockPos b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        double dx = a.getX() - b.getX();
+        double dy = a.getY() - b.getY();
+        double dz = a.getZ() - b.getZ();
+        return dx * dx + dy * dy + dz * dz
+                <= TreeRegenTracker.SAME_TREE_RADIUS * TreeRegenTracker.SAME_TREE_RADIUS;
     }
 
     private static List<BlockPos> focusBases(List<Stop> stops) {

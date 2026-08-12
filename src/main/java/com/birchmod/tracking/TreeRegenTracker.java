@@ -78,6 +78,22 @@ public class TreeRegenTracker {
     /** How tall a trunk can be. */
     private static final int TRUNK_HEIGHT = 12;
 
+    /**
+     * Logs that have to be stacked before something counts as a tree.
+     *
+     * A birch log with a non-birch block under it was the whole test, and the
+     * Park is full of birch that is not a tree: log piles, fence posts, half
+     * buried decoration, the odd stub of branch sitting outside a trunk's
+     * footprint. Every one of those registered as its own tree and earned its
+     * own marker, which is why markers came in clusters around a single trunk.
+     *
+     * A trunk is several logs standing on top of each other. The cost is that a
+     * tree already chopped down to a stump when you first walk past it is not
+     * picked up until it regrows, which is a far better failure than putting
+     * route markers on the scenery.
+     */
+    private static final int MIN_TRUNK_LOGS = 3;
+
     /** Upper bound on the configurable footprint, so the cell mask fits an int. */
     private static final int MAX_FOOTPRINT_RADIUS = 2;
 
@@ -440,6 +456,11 @@ public class TreeRegenTracker {
         int radius = footprintRadius();
         int added = 0;
 
+        WoodSampler sampler = (sx, sy, sz) -> {
+            cursor.set(sx, sy, sz);
+            return isBirchAt(client, cursor);
+        };
+
         for (int dy = -DISCOVER_BELOW; dy <= DISCOVER_ABOVE; dy++) {
             for (int dx = -DISCOVER_RADIUS; dx <= DISCOVER_RADIUS; dx++) {
                 for (int dz = -DISCOVER_RADIUS; dz <= DISCOVER_RADIUS; dz++) {
@@ -454,6 +475,11 @@ public class TreeRegenTracker {
                     cursor.set(x, y - 1, z);
                     if (isBirchAt(client, cursor)) {
                         continue; // not the base of this trunk
+                    }
+
+                    // Decoration is not a tree. See MIN_TRUNK_LOGS.
+                    if (!isTrunk(sampler, x, y, z)) {
+                        continue;
                     }
 
                     // The base column already belongs to a tree, so this is a
@@ -515,6 +541,20 @@ public class TreeRegenTracker {
 
     private static int cellIndex(int dx, int dz, int radius, int width) {
         return (dx + radius) * width + (dz + radius);
+    }
+
+    /**
+     * Whether a run of logs tall enough to be a trunk starts here.
+     *
+     * @param x the base position, already known to hold birch with non-birch beneath
+     */
+    static boolean isTrunk(WoodSampler sampler, int x, int y, int z) {
+        for (int dy = 1; dy < MIN_TRUNK_LOGS; dy++) {
+            if (!sampler.isWood(x, y + dy, z)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- Transitions ----
