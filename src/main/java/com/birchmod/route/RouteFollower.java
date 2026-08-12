@@ -66,7 +66,7 @@ public final class RouteFollower {
         return index;
     }
 
-    public List<Stop> plan(RecordedRoute recorded, Vec3 playerPos) {
+    public List<Stop> plan(RecordedRoute recorded, Vec3 playerPos, int wanted) {
         int size = recorded.size();
         if (size == 0) {
             return List.of();
@@ -93,7 +93,7 @@ public final class RouteFollower {
             index = Advance.toCheapest(index, hasWood, ready, arrivalCosts(live, playerPos));
         }
 
-        return emit(live, size, playerPos);
+        return emit(live, size, playerPos, wanted);
     }
 
     /** Seconds to be chopping at each stop, waiting for regrowth included. */
@@ -136,8 +136,8 @@ public final class RouteFollower {
      * Arrival times chain: each stop is timed from the previous one, using the
      * leg times measured from your own foraging where they exist.
      */
-    private List<Stop> emit(TreeSight.Live[] live, int size, Vec3 playerPos) {
-        int lookahead = Math.min(size, Math.max(1, BirchConfig.get().routeLength));
+    private List<Stop> emit(TreeSight.Live[] live, int size, Vec3 playerPos, int wanted) {
+        int lookahead = Math.min(size, Math.max(1, wanted));
         List<Stop> stops = new ArrayList<>(lookahead);
         List<BlockPos> shown = new ArrayList<>(lookahead);
 

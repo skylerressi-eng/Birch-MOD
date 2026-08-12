@@ -32,8 +32,9 @@ import org.joml.Matrix4f;
  *       the tree you are standing at is down.</li>
  * </ul>
  *
- * Two stops are drawn by default. With {@code /route path true} the whole
- * planned loop is drawn instead.
+ * How many stops are drawn is {@code /route length}; two by default, which is
+ * one line to one tree. {@code /route path true} draws the whole active loop
+ * regardless of that.
  *
  * Tracers originate at the highlighted block, so line and marker always agree
  * on where the tree is.
@@ -51,9 +52,6 @@ public class TracerRenderer {
 
     /** Alpha of the solid block fill. Low enough to still see the wood. */
     private static final int FILL_ALPHA = 90;
-
-    /** Stops drawn normally: the one to chop, and the one after it. */
-    private static final int NEXT_TREE_STOPS = 2;
 
     private static final float TEXT_SCALE = 0.025f;
     private static final int FULL_BRIGHT = 0xF000F0;
@@ -143,7 +141,11 @@ public class TracerRenderer {
         // lines to trees you are not going to next. The planner still looks
         // further ahead than this; that lookahead is what lets a stop still
         // regrowing be stepped over, and it is separate from what gets drawn.
-        List<Stop> route = planned.subList(0, stopsToDraw(config.showFullPath, planned.size()));
+        // Everything the builder produced. How many that is — /route length, or
+        // the whole loop with /route path — is decided in one place, and it is
+        // not here. Deciding it twice is what made turning the length up change
+        // nothing you could see.
+        List<Stop> route = planned;
 
         Camera camera = client.gameRenderer.getMainCamera();
         Vec3 cam = camera.position();
@@ -181,21 +183,6 @@ public class TracerRenderer {
         if (config.showRouteLabels) {
             drawLabels(buffers, poseStack, client, camera, cam, route);
         }
-    }
-
-    /**
-     * How many stops to draw.
-     *
-     * Worth having on its own because both wrong answers have shipped. Drawing
-     * one stop leaves nothing pointing onward — the line to the next tree comes
-     * from having a next tree to draw it to. Drawing the whole loop fills a
-     * dense grove with lines to trees you are not going to next.
-     */
-    static int stopsToDraw(boolean showFullPath, int planned) {
-        if (planned <= 0) {
-            return 0;
-        }
-        return showFullPath ? planned : Math.min(NEXT_TREE_STOPS, planned);
     }
 
     /** Green when ready to chop, amber while regrowing, blue for later stops. */

@@ -189,12 +189,21 @@ public final class RouteCommand {
                             return 1;
                         })))
                 .then(ClientCommands.literal("length")
-                        .then(ClientCommands.argument("stops", IntegerArgumentType.integer(1, 16))
+                        .then(ClientCommands.argument("stops",
+                                        IntegerArgumentType.integer(1, BirchConfig.MAX_ROUTE_LENGTH))
                                 .executes(ctx -> {
-                                    BirchConfig.get().routeLength = IntegerArgumentType.getInteger(ctx, "stops");
+                                    int stops = IntegerArgumentType.getInteger(ctx, "stops");
+                                    BirchConfig.get().routeLength = stops;
                                     BirchConfig.save();
-                                    feedback(ctx.getSource(), "§7Route length: §f"
-                                            + BirchConfig.get().routeLength + " stops");
+                                    feedback(ctx.getSource(), "§7Showing the next §f" + stops
+                                            + "§7 tree(s)" + (stops > 1
+                                            ? " §8(" + (stops - 1) + " blue line(s) ahead)"
+                                            : " §8(no line onward at 1)"));
+                                    if (BirchConfig.get().showFullPath) {
+                                        feedback(ctx.getSource(), "§e  Note: §f/route path§e is on, "
+                                                + "so the whole loop is drawn and this is ignored. "
+                                                + "§f/route path false§e to use the length.");
+                                    }
                                     return 1;
                                 })))
                 .then(ClientCommands.literal("width")

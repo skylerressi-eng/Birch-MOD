@@ -38,13 +38,13 @@ final class Help {
         header(source, "How it follows you round");
         entry(source, "/route strict <true|false>", "true: exactly the order you recorded. "
                 + "false: a cleared stop hands over to the nearest ready tree");
-        entry(source, "/route length <1-16>", "how many stops to plan ahead");
         note(source, "Neither setting will move you off a tree with wood still on it.");
 
         header(source, "What you see");
         entry(source, "/route <true|false>", "the route overlay as a whole");
         entry(source, "/route tracers <true|false>", "the line from you to the tree you are chopping");
-        entry(source, "/route path <true|false>", "draw the whole loop, or just this tree and the next");
+        entry(source, "/route length <1-32>", "how many trees ahead to show — 10 draws the next ten");
+        entry(source, "/route path <true|false>", "draw the whole loop, ignoring the length");
         entry(source, "/route chain <true|false>", "the blue line onward to the next tree");
         entry(source, "/route labels <true|false>", "numbered labels above each stop");
         entry(source, "/route filled <true|false>", "fill the block to mine, or outline it only");

@@ -3,7 +3,6 @@ package com.birchmod.route;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.TreeRegenTracker;
 
 import net.minecraft.core.BlockPos;
@@ -48,15 +47,15 @@ public final class FreePlanner {
         committed.clear();
     }
 
-    public List<Stop> plan(Vec3 playerPos) {
+    public List<Stop> plan(Vec3 playerPos, int wanted) {
         List<TreeRegenTracker.Tree> available = tracker.getAllTrees();
         if (available.isEmpty()) {
             return List.of();
         }
 
         List<TreeRegenTracker.Tree> ordered = keepCommitted(available);
-        fillGreedily(ordered, available, playerPos);
-        return emit(ordered, playerPos);
+        fillGreedily(ordered, available, playerPos, Math.max(1, wanted));
+        return emit(ordered, playerPos, Math.max(1, wanted));
     }
 
     /**
@@ -87,9 +86,9 @@ public final class FreePlanner {
 
     private void fillGreedily(List<TreeRegenTracker.Tree> ordered,
                               List<TreeRegenTracker.Tree> remaining,
-                              Vec3 playerPos) {
-        int limit = Math.min(Math.max(1, BirchConfig.get().routeLength),
-                ordered.size() + remaining.size());
+                              Vec3 playerPos,
+                              int wanted) {
+        int limit = Math.min(wanted, ordered.size() + remaining.size());
 
         while (ordered.size() < limit && !remaining.isEmpty()) {
             boolean first = ordered.isEmpty();
@@ -171,14 +170,13 @@ public final class FreePlanner {
     }
 
     /** Re-time the settled order and record it as the new commitment. */
-    private List<Stop> emit(List<TreeRegenTracker.Tree> ordered, Vec3 playerPos) {
+    private List<Stop> emit(List<TreeRegenTracker.Tree> ordered, Vec3 playerPos, int wanted) {
         committed.clear();
 
         // Honour a route length that has since been lowered, rather than
         // carrying the old commitment until every stop on it is felled.
-        int limit = Math.max(1, BirchConfig.get().routeLength);
-        if (ordered.size() > limit) {
-            ordered = ordered.subList(0, limit);
+        if (ordered.size() > wanted) {
+            ordered = ordered.subList(0, wanted);
         }
 
         List<Stop> stops = new ArrayList<>(ordered.size());

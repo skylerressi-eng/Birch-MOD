@@ -28,6 +28,9 @@ public final class BirchConfig {
      */
     private static final int CURRENT_VERSION = 2;
 
+    /** Upper bound on how many stops can be shown at once. */
+    public static final int MAX_ROUTE_LENGTH = 32;
+
     /**
      * Which set of defaults this file was written against.
      *
@@ -105,8 +108,13 @@ public final class BirchConfig {
      * readable.
      */
     public boolean showFullPath = false;
-    /** How many stops to plan ahead. */
-    public int routeLength = 5;
+    /**
+     * How many trees ahead to show, the tree you are chopping included.
+     *
+     * Two is the tree under your axe and the one you are going to next, which
+     * is one line to one tree. Turn it up to see further round the loop.
+     */
+    public int routeLength = 2;
     /** Blocks above the trunk base to treat as the tree's centre. */
     public int treeCenterHeight = 2;
     /**
@@ -202,7 +210,7 @@ public final class BirchConfig {
         bazaarTaxRate = Math.max(0.0, Math.min(0.25, bazaarTaxRate));
         hudX = Math.max(0, hudX);
         hudY = Math.max(0, hudY);
-        routeLength = Math.max(1, Math.min(16, routeLength));
+        routeLength = Math.max(1, Math.min(MAX_ROUTE_LENGTH, routeLength));
         treeCenterHeight = Math.max(0, Math.min(12, treeCenterHeight));
         treeFootprint = Math.max(0, Math.min(2, treeFootprint));
         lineWidth = Math.max(0.5, Math.min(10.0, lineWidth));

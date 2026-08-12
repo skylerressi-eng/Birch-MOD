@@ -3,6 +3,7 @@ package com.birchmod.route;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.TreeRegenTracker;
 
 import net.minecraft.core.BlockPos;
@@ -26,6 +27,16 @@ public final class RouteBuilder {
 
     /** How many stops ahead the tracker watches closely. */
     private static final int FOCUS_STOPS = 3;
+
+    /**
+     * Extra stops asked of the planner before duplicates are removed.
+     *
+     * Ask for exactly ten and you get fewer than ten whenever two of them turn
+     * out to be the same tree, which is the case the merge exists to handle.
+     * Planning a few spare costs nothing and means the number you asked for is
+     * the number you get.
+     */
+    private static final int DEDUP_MARGIN = 4;
 
     private final TreeRegenTracker regenTracker;
     private final RouteFollower follower;
@@ -54,12 +65,40 @@ public final class RouteBuilder {
         boolean recorded = active != null && active.size() >= RouteLibrary.MIN_STOPS;
         followingRecorded = recorded;
 
-        List<Stop> next = distinct(recorded
-                ? follower.plan(active, playerPos)
-                : planner.plan(playerPos));
+        BirchConfig config = BirchConfig.get();
+        int target = targetStops(config.showFullPath, config.routeLength,
+                recorded ? active.size() : 0);
+
+        List<Stop> next = trim(distinct(recorded
+                ? follower.plan(active, playerPos, target + DEDUP_MARGIN)
+                : planner.plan(playerPos, target + DEDUP_MARGIN)), target);
 
         route = List.copyOf(next);
         regenTracker.setFocus(focusBases(next));
+    }
+
+    /**
+     * How many stops the route should contain.
+     *
+     * One place decides this. It used to be decided twice — the planner worked
+     * to {@code /route length} and the renderer drew a fixed two regardless —
+     * so turning the length up planned further ahead and changed nothing you
+     * could see. Whatever this returns is what gets built and what gets drawn.
+     *
+     * @param loopSize stops on the recorded route being followed, or 0 when
+     *                 there is none
+     */
+    static int targetStops(boolean showFullPath, int routeLength, int loopSize) {
+        int wanted = Math.max(1, routeLength);
+        if (!showFullPath) {
+            return wanted;
+        }
+        // The whole loop, when there is a loop to show.
+        return loopSize > 0 ? loopSize : wanted;
+    }
+
+    private static List<Stop> trim(List<Stop> stops, int target) {
+        return stops.size() <= target ? stops : stops.subList(0, target);
     }
 
     /**
