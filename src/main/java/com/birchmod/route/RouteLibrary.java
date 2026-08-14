@@ -72,6 +72,8 @@ public final class RouteLibrary {
     private static final class Store {
         Map<String, RecordedRoute> routes = new LinkedHashMap<>();
         String active = null;
+        /** Restored on every login, whatever was active when you logged out. */
+        String defaultRoute = null;
     }
 
     private static Store store = new Store();
@@ -169,6 +171,9 @@ public final class RouteLibrary {
         if (removed && key(name).equals(store.active)) {
             store.active = null;
         }
+        if (removed && key(name).equals(store.defaultRoute)) {
+            store.defaultRoute = null;
+        }
         persist();
         return removed;
     }
@@ -202,6 +207,64 @@ public final class RouteLibrary {
         persist();
     }
 
+    // ---- The default ----
+
+    /**
+     * The route to come back to.
+     *
+     * {@code use} switches what you are following now; this decides what you
+     * are following on the next login. Without it, a session spent trying
+     * {@code compile} or {@code best} quietly becomes your permanent setup,
+     * because whatever was active last is what loads.
+     */
+    public static void setDefault(String name) {
+        store.defaultRoute = name == null ? null : key(name);
+        if (name != null) {
+            store.active = key(name);
+        }
+        persist();
+    }
+
+    public static String getDefaultName() {
+        if (store.defaultRoute == null) {
+            return null;
+        }
+        RecordedRoute route = store.routes.get(store.defaultRoute);
+        return route == null ? null : route.name;
+    }
+
+    public static void clearDefault() {
+        store.defaultRoute = null;
+        persist();
+    }
+
+    /** Follow the default again, if there is one. */
+    public static RecordedRoute applyDefault() {
+        if (store.defaultRoute == null) {
+            return null;
+        }
+        RecordedRoute route = store.routes.get(store.defaultRoute);
+        if (route == null) {
+            return null;
+        }
+        store.active = store.defaultRoute;
+        persist();
+        return route;
+    }
+
+    /**
+     * Whether a position is a stop on the route being followed.
+     *
+     * The tracker uses this to admit a tree whatever state it is left in. A
+     * stop on your route is somewhere you work, and a shared grove means you
+     * will regularly arrive to find one already cut down to a stump by someone
+     * else — which must not stop it being tracked.
+     */
+    public static boolean activeContains(int x, int y, int z) {
+        RecordedRoute active = getActive();
+        return active != null && active.contains(x, y, z);
+    }
+
     private static String key(String name) {
         return name == null ? "" : name.toLowerCase(Locale.ROOT);
     }
@@ -228,6 +291,12 @@ public final class RouteLibrary {
                             store.routes = new LinkedHashMap<>();
                         }
                         sanitise();
+                        // A default is a standing instruction, so it wins over
+                        // whatever happened to be active when you logged out.
+                        if (store.defaultRoute != null
+                                && store.routes.containsKey(store.defaultRoute)) {
+                            store.active = store.defaultRoute;
+                        }
                     }
                 }
             }

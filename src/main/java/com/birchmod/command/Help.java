@@ -28,12 +28,16 @@ final class Help {
 
         header(source, "Choosing what to follow");
         entry(source, "/route list", "every saved route, best first, with your best lap");
-        entry(source, "/route use <name>", "follow this one; it stays chosen after a restart");
+        entry(source, "/route <name>", "run that route now");
+        entry(source, "/route setdefault <name>", "run it now and come back to it every login");
+        entry(source, "/route default", "go back to your default route");
+        entry(source, "/route use <name>", "the long way to write /route <name>");
         entry(source, "/route best", "follow whichever scores highest right now");
         entry(source, "/route compile [name]", "merge all your recordings into one optimised loop");
         entry(source, "/route auto", "follow nothing; plan from whatever is standing nearby");
         entry(source, "/route delete <name>", "remove a saved route");
-        note(source, "compile, best and auto each replace what you are currently following.");
+        note(source, "compile, best and auto each replace what you are following now, "
+                + "but never your default.");
 
         header(source, "How it follows you round");
         entry(source, "/route strict <true|false>", "true: exactly the order you recorded. "

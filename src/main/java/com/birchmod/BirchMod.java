@@ -95,6 +95,12 @@ public class BirchMod implements ClientModInitializer {
         // Felling a tree is the one unambiguous signal in the whole mod: it
         // says which tree, in what order, and — with the previous one — how
         // long that leg really took.
+        // A spot on the active route, or one already felled before, is tracked
+        // whatever is left standing on it.
+        regenTracker.setKnownSpots((x, y, z) ->
+                RouteLibrary.activeContains(x, y, z)
+                        || TravelGraph.canonical(x, y, z) != null);
+
         regenTracker.setChopListener(base -> {
             routeRecorder.onTreeChopped(base);
             TravelGraph.onTreeChopped(base);

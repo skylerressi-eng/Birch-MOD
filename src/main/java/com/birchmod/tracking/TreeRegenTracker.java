@@ -154,6 +154,22 @@ public class TreeRegenTracker {
     private static final double NEAR_DISTANCE_SQ = 8.0 * 8.0;
 
     /**
+     * How close you have to have been for a tree to count as yours.
+     * Generous, because a big swing radius and a moment's lag both stretch it,
+     * but far short of across the grove.
+     */
+    private static final double CHOP_CREDIT_DISTANCE_SQ = 16.0 * 16.0;
+
+    /**
+     * How long before a tree drops your having been beside it still counts.
+     *
+     * The last swing lands, the tree falls, and you are already moving. This
+     * covers that gap without stretching to trees you merely walked past a
+     * while ago.
+     */
+    private static final long CHOP_CREDIT_WINDOW_MS = 5_000L;
+
+    /**
      * How far a recorded coordinate may sit from a tracked base and still mean
      * the same tree. A trunk's base is re-detected a block or two off after it
      * regrows, so recorded routes never line up exactly.
@@ -171,6 +187,20 @@ public class TreeRegenTracker {
     @FunctionalInterface
     public interface WoodSampler {
         boolean isWood(int x, int y, int z);
+    }
+
+    /**
+     * Whether a position is somewhere the player already works.
+     *
+     * A spot on their route, or one they have felled before. Such a spot is
+     * admitted whatever state it is in, which matters because the Park is
+     * shared: another player chopping a tree down to its last log leaves
+     * something that looks exactly like decoration, and refusing it means the
+     * swing that finishes it goes unrecorded.
+     */
+    @FunctionalInterface
+    public interface SpotTest {
+        boolean isKnown(int x, int y, int z);
     }
 
     /** One tracked tree: a base, and the columns around it that belong to it. */
@@ -207,6 +237,17 @@ public class TreeRegenTracker {
          */
         volatile boolean downed;
         volatile long downedAt;
+
+        /**
+         * When the player was last within reach of this tree.
+         *
+         * Recorded as they move rather than read off at the moment the tree
+         * drops, because the drop is noticed on the next probe and a Skyblock
+         * speed stat carries you a long way in that time. Sampling position
+         * when the fell is detected would deny you credit for your own tree
+         * simply because you had already set off for the next one.
+         */
+        long lastNearAt;
 
         /**
          * Whether the fell has been announced. Announcing it the instant the
@@ -364,8 +405,24 @@ public class TreeRegenTracker {
     /** Notified when a tree is fully felled, so routes can be recorded. */
     private java.util.function.Consumer<BlockPos> chopListener = null;
 
+    /** Positions worth tracking regardless of how much birch is left on them. */
+    private volatile SpotTest knownSpots = null;
+
     public void setChopListener(java.util.function.Consumer<BlockPos> listener) {
         this.chopListener = listener;
+    }
+
+    public void setKnownSpots(SpotTest test) {
+        this.knownSpots = test;
+    }
+
+    private boolean isKnownSpot(int x, int y, int z) {
+        SpotTest test = knownSpots;
+        try {
+            return test != null && test.isKnown(x, y, z);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /**
@@ -489,9 +546,13 @@ public class TreeRegenTracker {
                         continue; // not the base of this trunk
                     }
 
-                    // A lone decorative log is not worth routing to; a trunk
-                    // or a pile of logs is. See NEIGHBOUR_PROBE_HEIGHT.
-                    if (!isHarvestable(sampler, x, y, z, BirchConfig.get().minTreeLogs)) {
+                    // A lone decorative log is not worth routing to; a trunk or
+                    // a pile of logs is. Somewhere you already work is admitted
+                    // whatever is left of it — the Park is shared, and a tree
+                    // another player has cut down to its last log looks exactly
+                    // like decoration until you swing at it.
+                    if (!isKnownSpot(x, y, z)
+                            && !isHarvestable(sampler, x, y, z, BirchConfig.get().minTreeLogs)) {
                         continue;
                     }
 
@@ -640,8 +701,12 @@ public class TreeRegenTracker {
                 continue;
             }
 
-            boolean urgent = playerPos.distSqr(tree.base) <= NEAR_DISTANCE_SQ
-                    || focused.contains(tree.base);
+            double distanceSq = playerPos.distSqr(tree.base);
+            if (distanceSq <= CHOP_CREDIT_DISTANCE_SQ) {
+                tree.lastNearAt = now;
+            }
+
+            boolean urgent = distanceSq <= NEAR_DISTANCE_SQ || focused.contains(tree.base);
             if (!urgent) {
                 if (now < tree.nextProbeAt) {
                     continue;
@@ -711,11 +776,28 @@ public class TreeRegenTracker {
      * whole class of problem — and because both ends of a leg are delayed by
      * the same amount, the times measured between them are unaffected.
      */
+    /**
+     * Whether this tree was plausibly felled by the player.
+     *
+     * Groves are shared. A tree dropping across the island is somebody else's
+     * work, and counting it puts a stop into a route being recorded, times a
+     * leg that was never walked, and moves a lap on by one.
+     */
+    private static boolean felledByUs(Tree tree) {
+        return tree.lastNearAt > 0L
+                && tree.downedAt - tree.lastNearAt <= CHOP_CREDIT_WINDOW_MS;
+    }
+
     private void confirmChop(Tree tree, long now) {
         if (!tree.downed || tree.chopReported || now - tree.downedAt < MIN_DOWNED_MS) {
             return;
         }
         tree.chopReported = true;
+        if (!felledByUs(tree)) {
+            // Still timed for regrowth — knowing when it comes back is useful
+            // whoever took it — but not counted, recorded or credited.
+            return;
+        }
         SessionStats.recordTreeChopped();
 
         java.util.function.Consumer<BlockPos> listener = chopListener;

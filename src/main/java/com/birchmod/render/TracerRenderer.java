@@ -53,6 +53,16 @@ public class TracerRenderer {
     /** Alpha of the solid block fill. Low enough to still see the wood. */
     private static final int FILL_ALPHA = 90;
 
+    /**
+     * Stops that get a solid fill. Filling every box in a ten-tree view is
+     * most of what makes it read as a mess — the fill is there to say "mine
+     * this", and only one tree is the one to mine.
+     */
+    private static final int FILLED_STOPS = 1;
+
+    /** Weight of the furthest stop drawn, relative to the nearest. */
+    private static final double FAINTEST = 0.28;
+
     private static final float TEXT_SCALE = 0.025f;
     private static final int FULL_BRIGHT = 0xF000F0;
 
@@ -155,10 +165,16 @@ public class TracerRenderer {
         float width = lineWidth(config);
         Vec3[] points = smoothPositions(route);
 
-        // Solid fill first, so the outline drawn after it reads on top.
+        int count = route.size();
+
+        // Solid fill first, so the outline drawn after it reads on top. Only
+        // the tree you are actually mining gets one.
         if (config.filledHighlight && FILL_WRITER.supportsFill()) {
             VertexConsumer fill = buffers.getBuffer(FILLED);
             for (Stop stop : route) {
+                if (stop.order() > FILLED_STOPS) {
+                    continue;
+                }
                 int[] rgb = colourFor(stop);
                 fillBox(fill, matrix, poseStack, stop.center(), cam,
                         rgb[0], rgb[1], rgb[2], FILL_ALPHA, width);
@@ -170,8 +186,9 @@ public class TracerRenderer {
 
         for (Stop stop : route) {
             int[] rgb = colourFor(stop);
-            int alpha = stop.order() == 1 ? 255 : 170;
-            drawBox(lines, matrix, poseStack, stop.center(), cam, rgb[0], rgb[1], rgb[2], alpha, width);
+            double weight = weightOf(stop.order(), count);
+            drawBox(lines, matrix, poseStack, stop.center(), cam,
+                    rgb[0], rgb[1], rgb[2], alphaFor(weight, 255), taper(width, weight));
         }
 
         if (config.tracersEnabled) {
@@ -183,6 +200,35 @@ public class TracerRenderer {
         if (config.showRouteLabels) {
             drawLabels(buffers, poseStack, client, camera, cam, route);
         }
+    }
+
+    /**
+     * How strongly to draw a stop, from 1.0 for the next tree down to
+     * {@link #FAINTEST} for the last one shown.
+     *
+     * Ten trees drawn at equal weight is ten things all claiming to be the one
+     * that matters, which is what makes a long view read as a tangle. Fading
+     * along the route restores the order the route already has: the hop in
+     * front of you is the loudest thing on screen and the rest recedes behind
+     * it, without any of it disappearing.
+     */
+    static double weightOf(int order, int count) {
+        if (count <= 1 || order <= 1) {
+            return 1.0;
+        }
+        double along = Math.min(1.0, (order - 1.0) / Math.max(1.0, count - 1.0));
+        return 1.0 - along * (1.0 - FAINTEST);
+    }
+
+    static int alphaFor(double weight, int full) {
+        int alpha = (int) Math.round(full * weight);
+        return Math.max(24, Math.min(255, alpha));
+    }
+
+    static float taper(float width, double weight) {
+        // Thin the far end, but never below something a line can be seen at.
+        float scaled = (float) (width * (0.55 + 0.45 * weight));
+        return Math.max(1.0f, scaled);
     }
 
     /** Green when ready to chop, amber while regrowing, blue for later stops. */
@@ -230,10 +276,13 @@ public class TracerRenderer {
         }
         // Onward from the block you are mining to the next tree, so the way on
         // is visible before you have finished the tree you are standing at.
-        // With the full path off this is a single line to a single tree.
+        // With one tree ahead this is a single line to a single tree; with ten
+        // it fades out along the way, so the hop you are about to make is
+        // obvious and the rest reads as context rather than competing with it.
         for (int i = 0; i < points.length - 1; i++) {
+            double weight = weightOf(i + 2, route.size());
             drawLine(lines, matrix, poseStack, points[i], points[i + 1], cam,
-                    CHAIN_R, CHAIN_G, CHAIN_B, 190, width);
+                    CHAIN_R, CHAIN_G, CHAIN_B, alphaFor(weight, 190), taper(width, weight));
         }
     }
 

@@ -59,6 +59,12 @@ public final class RouteCommand {
                     feedback(ctx.getSource(), "§7Route overlay: " + onOff(BirchConfig.get().routeEnabled));
                     return 1;
                 }))
+                // /route <name> — run that route. Brigadier tries the boolean
+                // above first and falls through to here when the word is not
+                // "true" or "false", so both readings of /route <word> work.
+                .then(ClientCommands.argument("route", StringArgumentType.word()).executes(ctx ->
+                        follow(ctx.getSource(), routeBuilder,
+                                StringArgumentType.getString(ctx, "route"))))
                 .then(ClientCommands.literal("start")
                         .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx -> {
                             String name = StringArgumentType.getString(ctx, "name");
@@ -103,19 +109,9 @@ public final class RouteCommand {
                     return 1;
                 }))
                 .then(ClientCommands.literal("use")
-                        .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx -> {
-                            String name = StringArgumentType.getString(ctx, "name");
-                            RecordedRoute route = RouteLibrary.get(name);
-                            if (route == null) {
-                                feedback(ctx.getSource(), "§cNo route called §f" + name);
-                                return 0;
-                            }
-                            RouteLibrary.setActive(route.name);
-                            routeBuilder.resetCommitment();
-                            feedback(ctx.getSource(), "§aFollowing §f" + route.name
-                                    + "§a (" + route.size() + " stops).");
-                            return 1;
-                        })))
+                        .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx ->
+                                follow(ctx.getSource(), routeBuilder,
+                                        StringArgumentType.getString(ctx, "name")))))
                 .then(ClientCommands.literal("strict")
                         .then(ClientCommands.argument("enabled", BoolArgumentType.bool()).executes(ctx -> {
                             BirchConfig.get().strictRoute = BoolArgumentType.getBool(ctx, "enabled");
@@ -148,6 +144,32 @@ public final class RouteCommand {
                 }))
                 .then(ClientCommands.literal("help").executes(ctx -> {
                     Help.route(ctx.getSource());
+                    return 1;
+                }))
+                .then(ClientCommands.literal("setdefault")
+                        .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx -> {
+                            String name = StringArgumentType.getString(ctx, "name");
+                            RecordedRoute route = RouteLibrary.get(name);
+                            if (route == null) {
+                                feedback(ctx.getSource(), "§cNo route called §f" + name);
+                                return 0;
+                            }
+                            RouteLibrary.setDefault(route.name);
+                            routeBuilder.resetCommitment();
+                            feedback(ctx.getSource(), "§a§f" + route.name
+                                    + "§a is your default, and you are on it now.");
+                            feedback(ctx.getSource(), "§8It comes back every login, "
+                                    + "whatever you were following when you left.");
+                            return 1;
+                        })))
+                .then(ClientCommands.literal("default").executes(ctx -> {
+                    RecordedRoute restored = RouteLibrary.applyDefault();
+                    if (restored == null) {
+                        feedback(ctx.getSource(), "§cNo default set. §f/route setdefault <name>");
+                        return 0;
+                    }
+                    routeBuilder.resetCommitment();
+                    feedback(ctx.getSource(), "§aBack on your default: §f" + restored.name);
                     return 1;
                 }))
                 .then(ClientCommands.literal("auto").executes(ctx -> {
@@ -255,6 +277,29 @@ public final class RouteCommand {
                                             + BirchConfig.get().treeCenterHeight + " blocks");
                                     return 1;
                                 }))));
+    }
+
+    /** Start following a saved route by name. */
+    private static int follow(FabricClientCommandSource source,
+                              RouteBuilder routeBuilder,
+                              String name) {
+        RecordedRoute route = RouteLibrary.get(name);
+        if (route == null) {
+            feedback(source, "§cNo route called §f" + name);
+            feedback(source, "§8§f/route list§8 shows what you have saved.");
+            return 0;
+        }
+        RouteLibrary.setActive(route.name);
+        routeBuilder.resetCommitment();
+        feedback(source, "§aFollowing §f" + route.name + "§a (" + route.size() + " stops).");
+
+        String preferred = RouteLibrary.getDefaultName();
+        if (preferred != null && !preferred.equalsIgnoreCase(route.name)) {
+            feedback(source, "§8Your default is still §f" + preferred
+                    + "§8, and comes back next login. §f/route setdefault "
+                    + route.name + "§8 to change that.");
+        }
+        return 1;
     }
 
     private static void show(FabricClientCommandSource source,
@@ -375,15 +420,19 @@ public final class RouteCommand {
 
         for (RecordedRoute route : routes) {
             RouteLibrary.Score score = RouteLibrary.score(route, regenSeconds);
+            String defaultName = RouteLibrary.getDefaultName();
             String marker = route.name.equalsIgnoreCase(active) ? "§a> " : "§7  ";
+            if (route.name.equalsIgnoreCase(defaultName)) {
+                marker = marker + "§6* ";
+            }
             String best = route.bestLapSeconds > 0.0
                     ? " §8· best lap §f" + LapTracker.format(route.bestLapSeconds)
                     : " §8· never lapped";
             feedback(source, marker + "§f" + route.name + " §7— " + score.stops() + " stops, "
                     + SEC_FMT.format(score.treesPerMinute()) + " trees/min" + best);
         }
-        feedback(source, "§8Scored against a " + SEC_FMT.format(regenSeconds) + "s regen. "
-                + "§f/route best§8 picks the top one.");
+        feedback(source, "§8§a>§8 following · §6*§8 default. Run one with §f/route <name>§8, "
+                + "keep it with §f/route setdefault <name>§8.");
     }
 
     /** Explain why a route scores as it does. */
