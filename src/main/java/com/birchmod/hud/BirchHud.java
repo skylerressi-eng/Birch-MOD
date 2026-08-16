@@ -203,7 +203,7 @@ public class BirchHud implements HudElement {
             return null;
         }
 
-        double best = LapTracker.bestLapForActive();
+        double best = routeBuilder.getFollowing().bestLapSeconds();
         String progress = laps.getProgress() + "/" + laps.getLapSize();
         String bestNote = best > 0.0 ? " (best " + LapTracker.format(best) + ")" : "";
 
@@ -228,12 +228,9 @@ public class BirchHud implements HudElement {
 
         // Where in the loop this stop is, so a long route stops feeling
         // like an endless line of identical trees.
-        int index = routeBuilder.getRecordedIndex();
-        if (index >= 0) {
-            com.birchmod.route.RecordedRoute active = com.birchmod.route.RouteLibrary.getActive();
-            if (active != null) {
-                range = (index + 1) + "/" + active.size() + ", " + range;
-            }
+        RouteBuilder.Following following = routeBuilder.getFollowing();
+        if (following.isActive() && following.index() >= 0) {
+            range = (following.index() + 1) + "/" + following.stops() + ", " + range;
         }
 
         // A trunk you chopped into and walked away from is the one thing worth

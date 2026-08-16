@@ -42,8 +42,26 @@ public final class RouteBuilder {
     private final RouteFollower follower;
     private final FreePlanner planner;
 
+    /**
+     * What the overlay needs to know about the route being followed.
+     *
+     * Published as one immutable value because the alternative is the HUD
+     * reaching into the route library while it is being drawn — and the
+     * library is a plain map that commands write to on the client thread. A
+     * read of a HashMap racing a write to it does not merely return something
+     * stale; it can spin.
+     */
+    public record Following(String name, int stops, int index, double bestLapSeconds) {
+        public boolean isActive() {
+            return name != null;
+        }
+    }
+
+    private static final Following NOTHING = new Following(null, 0, -1, -1.0);
+
     /** Built on the client thread, read by the render thread. */
     private volatile List<Stop> route = List.of();
+    private volatile Following following = NOTHING;
     private long lastComputed = 0L;
     private volatile boolean followingRecorded = false;
 
@@ -74,7 +92,15 @@ public final class RouteBuilder {
                 : planner.plan(playerPos, target + DEDUP_MARGIN)), target);
 
         route = List.copyOf(next);
+        following = recorded
+                ? new Following(active.name, active.size(), follower.getIndex(), active.bestLapSeconds)
+                : NOTHING;
         regenTracker.setFocus(focusBases(next));
+    }
+
+    /** A safe snapshot of the route being followed, for the overlay to read. */
+    public Following getFollowing() {
+        return following;
     }
 
     /**
@@ -208,11 +234,6 @@ public final class RouteBuilder {
     /** True while a recorded route is being followed rather than planned. */
     public boolean isFollowingRecorded() {
         return followingRecorded;
-    }
-
-    /** Which recorded stop is being worked, or -1 when not following one. */
-    public int getRecordedIndex() {
-        return followingRecorded ? follower.getIndex() : -1;
     }
 
     /** Forget where we are, e.g. after switching routes. */

@@ -551,8 +551,10 @@ public class TreeRegenTracker {
                     // whatever is left of it — the Park is shared, and a tree
                     // another player has cut down to its last log looks exactly
                     // like decoration until you swing at it.
-                    if (!isKnownSpot(x, y, z)
-                            && !isHarvestable(sampler, x, y, z, BirchConfig.get().minTreeLogs)) {
+                    // The cheap test first: six block reads, against a scan of
+                    // every route stop and every tree ever felled.
+                    if (!isHarvestable(sampler, x, y, z, BirchConfig.get().minTreeLogs)
+                            && !isKnownSpot(x, y, z)) {
                         continue;
                     }
 
@@ -689,7 +691,15 @@ public class TreeRegenTracker {
             // recording and a leg time that never gets measured.
             confirmChop(tree, now);
 
-            if (playerPos.distSqr(tree.base) > FORGET_DISTANCE_SQ) {
+            double distanceSq = playerPos.distSqr(tree.base);
+            // Recorded before any of the guards below, so being out of a
+            // loaded chunk or losing a probe slot cannot cost you credit for
+            // a tree you were standing at.
+            if (distanceSq <= CHOP_CREDIT_DISTANCE_SQ) {
+                tree.lastNearAt = now;
+            }
+
+            if (distanceSq > FORGET_DISTANCE_SQ) {
                 releaseColumns(tree);
                 it.remove();
                 continue;
@@ -699,11 +709,6 @@ public class TreeRegenTracker {
             // phantom chop, then a phantom regrow the moment it loads again.
             if (!client.level.hasChunk(tree.base.getX() >> 4, tree.base.getZ() >> 4)) {
                 continue;
-            }
-
-            double distanceSq = playerPos.distSqr(tree.base);
-            if (distanceSq <= CHOP_CREDIT_DISTANCE_SQ) {
-                tree.lastNearAt = now;
             }
 
             boolean urgent = distanceSq <= NEAR_DISTANCE_SQ || focused.contains(tree.base);

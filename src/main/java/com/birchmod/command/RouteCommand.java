@@ -34,6 +34,21 @@ public final class RouteCommand {
 
     private static final DecimalFormat SEC_FMT = new DecimalFormat("#0.0");
 
+    /**
+     * Names that {@code /route <name>} can never reach.
+     *
+     * Every subcommand, plus the two words the overlay toggle reads. Naming a
+     * route after one of them is not an error — it saves and runs perfectly
+     * well through {@code /route use} — but the short form silently does
+     * something else entirely, which is worth knowing at the moment you choose
+     * the name rather than the moment it confuses you.
+     */
+    private static final java.util.Set<String> RESERVED = java.util.Set.of(
+            "true", "false", "start", "stop", "cancel", "compile", "list", "use",
+            "strict", "minlogs", "stats", "help", "setdefault", "default", "auto",
+            "best", "delete", "tracers", "path", "chain", "length", "width",
+            "filled", "labels", "center");
+
     private RouteCommand() {
     }
 
@@ -73,6 +88,12 @@ public final class RouteCommand {
                                     + "§a. Chop trees in the order you want them; §f/route stop§a when done.");
                             feedback(ctx.getSource(), "§8Needs at least "
                                     + RouteLibrary.MIN_STOPS + " trees to save.");
+                            if (RESERVED.contains(name.toLowerCase(java.util.Locale.ROOT))) {
+                                feedback(ctx.getSource(), "§e  Heads up: §f/route " + name
+                                        + "§e is already a command, so it will not launch this route.");
+                                feedback(ctx.getSource(), "§8  Use §f/route use " + name
+                                        + "§8, or §f/route cancel§8 and pick another name.");
+                            }
                             return 1;
                         })))
                 .then(ClientCommands.literal("stop").executes(ctx -> {
@@ -176,6 +197,11 @@ public final class RouteCommand {
                     RouteLibrary.clearActive();
                     routeBuilder.resetCommitment();
                     feedback(ctx.getSource(), "§7Back to planning routes automatically.");
+                    String preferred = RouteLibrary.getDefaultName();
+                    if (preferred != null) {
+                        feedback(ctx.getSource(), "§8Your default §f" + preferred
+                                + "§8 comes back next login. §f/route setdefault§8 changes it.");
+                    }
                     return 1;
                 }))
                 .then(ClientCommands.literal("best").executes(ctx -> {
@@ -415,12 +441,12 @@ public final class RouteCommand {
             return;
         }
         String active = RouteLibrary.getActiveName();
+        String defaultName = RouteLibrary.getDefaultName();
 
         routes.sort(RouteLibrary.ranking(regenSeconds));
 
         for (RecordedRoute route : routes) {
             RouteLibrary.Score score = RouteLibrary.score(route, regenSeconds);
-            String defaultName = RouteLibrary.getDefaultName();
             String marker = route.name.equalsIgnoreCase(active) ? "§a> " : "§7  ";
             if (route.name.equalsIgnoreCase(defaultName)) {
                 marker = marker + "§6* ";
