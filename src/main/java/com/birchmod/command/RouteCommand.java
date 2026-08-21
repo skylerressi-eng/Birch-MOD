@@ -7,6 +7,7 @@ import com.birchmod.BirchMod;
 import com.birchmod.route.LapTracker;
 import com.birchmod.route.RecordedRoute;
 import com.birchmod.route.RouteCodec;
+import com.birchmod.route.RouteFiles;
 import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteOptimizer;
@@ -169,16 +170,27 @@ public final class RouteCommand {
                                 return 0;
                             }
                             String code = RouteCodec.encode(route);
-                            boolean copied = copyToClipboard(code);
                             feedback(ctx.getSource(), "§6§lBirch Optimizer §7— exported §f" + name);
-                            feedback(ctx.getSource(), copied
-                                    ? "§aCopied to your clipboard §8(" + code.length() + " characters)"
-                                    : "§eCould not reach the clipboard; the code is below.");
-                            if (!copied) {
+
+                            // Both a file and the clipboard: one to send, one to
+                            // paste, and no reason to make anyone choose.
+                            try {
+                                java.nio.file.Path written =
+                                        RouteFiles.write(RouteFiles.directory(), route);
+                                feedback(ctx.getSource(), "§aSaved §f" + written.getFileName());
+                                feedback(ctx.getSource(), "§8" + RouteFiles.directory());
+                            } catch (Exception e) {
+                                feedback(ctx.getSource(), "§eCould not write the file.");
+                            }
+
+                            if (copyToClipboard(code)) {
+                                feedback(ctx.getSource(), "§aCode copied to your clipboard §8("
+                                        + code.length() + " characters)");
+                            } else {
                                 feedback(ctx.getSource(), "§7" + code);
                             }
-                            feedback(ctx.getSource(), "§8Whoever you send it to runs "
-                                    + "§f/route import <code>§8.");
+                            feedback(ctx.getSource(), "§8They import it from the Routes tab of "
+                                    + "§f/birch gui§8, or with §f/route import§8.");
                             return 1;
                         })))
                 .then(ClientCommands.literal("import")

@@ -21,7 +21,7 @@ final class Help {
         line(source, "§6§lBirch Optimizer §7— route commands");
 
         header(source, "Sharing routes");
-        entry(source, "/route export <name>", "copy a share code for it to your clipboard");
+        entry(source, "/route export <name>", "save it as a file and copy its code");
         entry(source, "/route import <code>", "take a route somebody sent you");
         entry(source, "/route import", "take whatever route code is on your clipboard");
         note(source, "Importing never overwrites: a name you already have gets a number.");
@@ -63,7 +63,7 @@ final class Help {
         entry(source, "/route minlogs <1-8>", "birch needed at a spot before it is marked — 2 takes trunks and log piles, 1 takes everything");
 
         header(source, "What it knows");
-        entry(source, "/route gui", "the settings screen, on the Routes tab");
+        entry(source, "/route gui", "the settings screen; the Routes tab imports and exports");
         entry(source, "/route", "the current route, stop by stop, with what is left on each");
         entry(source, "/route stats", "measured leg times, travel speed and chop history");
 

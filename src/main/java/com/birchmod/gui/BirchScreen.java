@@ -35,17 +35,13 @@ import net.minecraft.network.chat.Component;
  */
 public class BirchScreen extends Screen {
 
-    private static final int TITLE_Y = 12;
-    private static final int TAB_Y = 28;
-    private static final int TAB_HEIGHT = 18;
-    private static final int GRID_TOP = 54;
-    private static final int ROW_HEIGHT = 21;
-    private static final int WIDGET_HEIGHT = 20;
+    private static final int ROW_HEIGHT = 23;
+    static final int WIDGET_HEIGHT = 20;
     private static final int COLUMNS = 2;
     private static final int COLUMN_GAP = 8;
-    private static final int SIDE_MARGIN = 16;
-    private static final int FOOTER_HEIGHT = 40;
-    private static final int PANEL_COLOR = 0xB0101010;
+
+    /** The tab index that is not a grid of settings but a screen of its own. */
+    private static final int ROUTES_TAB = 4;
 
     /** One page of a tab, built fresh whenever the layout changes. */
     public interface Tab {
@@ -64,13 +60,17 @@ public class BirchScreen extends Screen {
     private boolean rebuildRequested = false;
 
     public BirchScreen(Screen parent) {
+        this(parent, 0);
+    }
+
+    public BirchScreen(Screen parent, int tab) {
         super(Component.literal("Birch Optimizer"));
         this.parent = parent;
         tabs.add(new OverlayTab());
         tabs.add(new RouteTab());
         tabs.add(new TreesTab());
         tabs.add(new AlertsTab());
-        tabs.add(new RoutesTab());
+        this.activeTab = Math.max(0, Math.min(tabs.size() - 1, tab));
     }
 
     /** Rebuild on the next frame. Safe to call from inside a button press. */
@@ -84,37 +84,18 @@ public class BirchScreen extends Screen {
 
     @Override
     protected void init() {
-        int usable = Math.max(0, height - GRID_TOP - FOOTER_HEIGHT);
-        int rows = Math.max(1, usable / ROW_HEIGHT);
+        Chrome.tabs(width, activeTab, this::openTab, this::addRenderableWidget);
+
+        int top = Chrome.CONTENT_TOP;
+        int bottom = Chrome.contentBottom(height);
+        int rows = Math.max(1, (bottom - top) / ROW_HEIGHT);
         int perPage = rows * COLUMNS;
 
-        // Tabs.
-        int tabWidth = Math.min(96, (width - SIDE_MARGIN * 2) / tabs.size());
-        int tabsWidth = tabWidth * tabs.size();
-        int tabX = (width - tabsWidth) / 2;
-
-        for (int i = 0; i < tabs.size(); i++) {
-            final int index = i;
-            Tab tab = tabs.get(i);
-            Button button = Button.builder(
-                            Component.literal(index == activeTab ? "§f" + tab.title() : "§7" + tab.title()),
-                            b -> {
-                                activeTab = index;
-                                page = 0;
-                                rebuildWidgets();
-                            })
-                    .bounds(tabX + i * tabWidth, TAB_Y, tabWidth - 2, TAB_HEIGHT)
-                    .build();
-            button.active = index != activeTab;
-            addRenderableWidget(button);
-        }
-
-        // Controls for the active tab, one page at a time.
         List<Supplier<AbstractWidget>> controls = tabs.get(activeTab).controls(this);
         int pages = Math.max(1, (controls.size() + perPage - 1) / perPage);
         page = Math.min(page, pages - 1);
 
-        int columnWidth = (width - SIDE_MARGIN * 2 - COLUMN_GAP * (COLUMNS - 1)) / COLUMNS;
+        int columnWidth = (width - Chrome.MARGIN * 2 - COLUMN_GAP * (COLUMNS - 1)) / COLUMNS;
         int from = page * perPage;
         int to = Math.min(controls.size(), from + perPage);
 
@@ -125,32 +106,44 @@ public class BirchScreen extends Screen {
 
             AbstractWidget widget = controls.get(i).get();
             widget.setWidth(columnWidth);
-            widget.setPosition(SIDE_MARGIN + column * (columnWidth + COLUMN_GAP),
-                    GRID_TOP + row * ROW_HEIGHT);
+            widget.setPosition(Chrome.MARGIN + column * (columnWidth + COLUMN_GAP),
+                    top + 2 + row * ROW_HEIGHT);
             addRenderableWidget(widget);
         }
 
-        // Footer.
-        int footerY = height - 28;
+        int footerY = Chrome.footerY(height);
         if (pages > 1) {
+            final int pageCount = pages;
             addRenderableWidget(Button.builder(Component.literal("<"), b -> {
-                page = (page - 1 + pages) % pages;
+                page = (page - 1 + pageCount) % pageCount;
                 rebuildWidgets();
-            }).bounds(width / 2 - 104, footerY, 20, 20).build());
+            }).bounds(Chrome.MARGIN, footerY, 20, 20).build());
 
-            addRenderableWidget(Button.builder(
-                            Component.literal("Page " + (page + 1) + "/" + pages), b -> {
+            Button indicator = addRenderableWidget(Button.builder(
+                            Component.literal((page + 1) + " / " + pages), b -> {
                             })
-                    .bounds(width / 2 - 82, footerY, 60, 20).build()).active = false;
+                    .bounds(Chrome.MARGIN + 22, footerY, 46, 20).build());
+            indicator.active = false;
 
             addRenderableWidget(Button.builder(Component.literal(">"), b -> {
-                page = (page + 1) % pages;
+                page = (page + 1) % pageCount;
                 rebuildWidgets();
-            }).bounds(width / 2 - 20, footerY, 20, 20).build());
+            }).bounds(Chrome.MARGIN + 70, footerY, 20, 20).build());
         }
 
         addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
-                .bounds(width / 2 + 6, footerY, 98, 20).build());
+                .bounds(width - Chrome.MARGIN - 90, footerY, 90, 20).build());
+    }
+
+    /** Tabs four and under are grids here; the fifth is a screen of its own. */
+    private void openTab(int index) {
+        if (index == ROUTES_TAB) {
+            minecraft.setScreen(new RoutesScreen(parent));
+            return;
+        }
+        activeTab = index;
+        page = 0;
+        rebuildWidgets();
     }
 
     @Override
@@ -164,17 +157,12 @@ public class BirchScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partial) {
-        // Panel first, widgets over it.
-        graphics.fill(SIDE_MARGIN - 6, GRID_TOP - 6,
-                width - SIDE_MARGIN + 6, height - FOOTER_HEIGHT + 6, PANEL_COLOR);
-
+        Chrome.background(graphics, font, width, height, activeTab);
         super.extractRenderState(graphics, mouseX, mouseY, partial);
 
-        String title = "§6§lBirch Optimizer";
-        graphics.text(font, title, (width - font.width(title)) / 2, TITLE_Y, 0xFFFFFFFF, true);
-
-        String hint = tabs.get(activeTab).title();
-        graphics.text(font, "§8" + hint, SIDE_MARGIN, height - 44, 0xFFAAAAAA, false);
+        String hint = "§8Hover a setting to see what it does. Changes save as you make them.";
+        graphics.text(font, hint, Chrome.MARGIN, Chrome.contentBottom(height) + 4,
+                Chrome.TEXT_DIM, false);
     }
 
     @Override
@@ -195,7 +183,7 @@ public class BirchScreen extends Screen {
     // ---- Control helpers, shared by every tab ----
 
     /** An on/off control wired straight to a config field. */
-    static Supplier<AbstractWidget> toggle(String label, String tooltip,
+    public static Supplier<AbstractWidget> toggle(String label, String tooltip,
                                            java.util.function.BooleanSupplier get,
                                            java.util.function.Consumer<Boolean> set) {
         return () -> {
@@ -213,7 +201,7 @@ public class BirchScreen extends Screen {
     }
 
     /** A slider over a numeric config field. */
-    static Supplier<AbstractWidget> slider(String label, String tooltip,
+    public static Supplier<AbstractWidget> slider(String label, String tooltip,
                                            double min, double max, double step,
                                            DoubleSupplier get, DoubleConsumer set) {
         return () -> {
@@ -229,7 +217,7 @@ public class BirchScreen extends Screen {
     }
 
     /** A plain button that runs something. */
-    static Supplier<AbstractWidget> action(String label, String tooltip, Runnable onPress) {
+    public static Supplier<AbstractWidget> action(String label, String tooltip, Runnable onPress) {
         return () -> {
             Button button = Button.builder(Component.literal(label), b -> onPress.run())
                     .bounds(0, 0, 150, WIDGET_HEIGHT).build();
@@ -241,7 +229,7 @@ public class BirchScreen extends Screen {
     }
 
     /** A label that fills a grid slot, for grouping. */
-    static Supplier<AbstractWidget> heading(String text) {
+    public static Supplier<AbstractWidget> heading(String text) {
         return () -> {
             Button button = Button.builder(Component.literal("§e§l" + text), b -> {
                     })
