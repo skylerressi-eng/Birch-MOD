@@ -59,8 +59,8 @@ final class RouteTab implements BirchScreen.Tab {
                 "How far up a trunk to aim the marker.",
                 0, 12, 1, () -> c.treeCenterHeight, v -> c.treeCenterHeight = (int) v));
         controls.add(BirchScreen.slider("Min logs",
-                "Birch needed at a spot before it is marked. 2 takes trunks and "
-                        + "log piles; 1 takes every log there is.",
+                "Birch needed at a spot before it is marked. 1 takes every log "
+                        + "there is; raise it if scenery earns markers.",
                 1, 8, 1, () -> c.minTreeLogs, v -> c.minTreeLogs = (int) v));
         controls.add(BirchScreen.slider("Tree size",
                 "How wide a patch of ground counts as one tree. 1 is a 3x3.",

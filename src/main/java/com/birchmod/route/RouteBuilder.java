@@ -142,17 +142,21 @@ public final class RouteBuilder {
      * arrived, including from whatever gets written next.
      */
     static List<Stop> distinct(List<Stop> stops) {
-        List<Stop> kept = new ArrayList<>(stops.size());
+        List<Stop> kept = new ArrayList<>();
+
+        // Wood accumulates into whichever stop it merged with, because merging
+        // has to be transitive. A log pile registered as three bases in a row
+        // is A next to B next to C, where A and C are nowhere near each other:
+        // comparing only against the stop that survived split it back in two,
+        // which is precisely the row of markers this is here to prevent.
+        List<List<Long>> woodOf = new ArrayList<>();
 
         for (Stop candidate : stops) {
-            boolean duplicate = false;
-            for (Stop existing : kept) {
-                if (isSameTree(existing, candidate)) {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (duplicate) {
+            List<Long> wood = woodOf(candidate);
+            int group = groupFor(candidate, wood, kept, woodOf);
+
+            if (group >= 0) {
+                absorb(woodOf.get(group), wood);
                 continue;
             }
             // Renumber, so the labels stay 1, 2, 3 with no gaps where a
@@ -160,19 +164,94 @@ public final class RouteBuilder {
             kept.add(new Stop(candidate.tree(), candidate.base(), candidate.center(),
                     candidate.etaSeconds(), kept.size() + 1,
                     candidate.woodLeft(), candidate.unfinished()));
+            woodOf.add(new ArrayList<>(wood));
         }
         return kept;
     }
 
-    private static boolean isSameTree(Stop a, Stop b) {
-        // The tracker's own identity is the strongest evidence there is.
-        if (a.tree() != null && a.tree() == b.tree()) {
-            return true;
+    /** Which kept stop this one belongs to, or -1 if it is a tree of its own. */
+    private static int groupFor(Stop candidate, List<Long> wood,
+                                List<Stop> kept, List<List<Long>> woodOf) {
+        for (int i = 0; i < kept.size(); i++) {
+            Stop existing = kept.get(i);
+
+            // The tracker's own identity is the strongest evidence there is.
+            if (candidate.tree() != null && candidate.tree() == existing.tree()) {
+                return i;
+            }
+            // Then the wood itself. Distance between bases is a guess about
+            // where a tree ends; the logs are the tree. A wide Park birch
+            // registered as two bases five blocks apart is still one tree when
+            // its wood is joined, and guessing from the bases is how it kept
+            // being drawn twice.
+            if (!wood.isEmpty() && !woodOf.get(i).isEmpty()) {
+                if (woodTouches(woodOf.get(i), wood)) {
+                    return i;
+                }
+                continue;
+            }
+            // Nothing to compare at one end — a felled tree, or a stop out of
+            // range — so fall back to where the marker lands, which is all
+            // there is to go on.
+            if (within(existing.base(), candidate.base())
+                    || within(existing.center(), candidate.center())) {
+                return i;
+            }
         }
-        // Otherwise go by where the marker actually lands, since that is what
-        // the player sees. Two markers this close are on one tree whatever the
-        // bookkeeping says about them.
-        return within(a.base(), b.base()) || within(a.center(), b.center());
+        return -1;
+    }
+
+    /** Logs a stop is standing on, or nothing when it is not tracked. */
+    private static List<Long> woodOf(Stop stop) {
+        if (stop.tree() == null) {
+            return List.of();
+        }
+        long[] wood = stop.tree().getWoodPositions();
+        List<Long> list = new ArrayList<>(wood.length);
+        for (long packed : wood) {
+            list.add(packed);
+        }
+        return list;
+    }
+
+    /** Grow a group by what merged into it, bounded so a grove cannot run away. */
+    private static void absorb(List<Long> group, List<Long> extra) {
+        for (long packed : extra) {
+            if (group.size() >= MAX_GROUP_LOGS) {
+                return;
+            }
+            group.add(packed);
+        }
+    }
+
+    /** Logs remembered per merged group. Well past what one tree holds. */
+    private static final int MAX_GROUP_LOGS = 256;
+
+    /**
+     * How far apart two logs can stand and still be the same tree.
+     *
+     * One block of gap, so a trunk and the branch beside it join, and so does a
+     * log lying on the ground against the stump it came off. Two trees standing
+     * clear of one another do not.
+     */
+    private static final int WOOD_TOUCH = 2;
+
+    /** Whether any log of one group stands next to any log of the other. */
+    private static boolean woodTouches(List<Long> left, List<Long> right) {
+        for (long first : left) {
+            int ax = BlockPos.getX(first);
+            int ay = BlockPos.getY(first);
+            int az = BlockPos.getZ(first);
+
+            for (long second : right) {
+                if (Math.abs(ax - BlockPos.getX(second)) <= WOOD_TOUCH
+                        && Math.abs(ay - BlockPos.getY(second)) <= WOOD_TOUCH
+                        && Math.abs(az - BlockPos.getZ(second)) <= WOOD_TOUCH) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

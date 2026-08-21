@@ -69,14 +69,33 @@ public class TreeRegenTracker {
 
     /** Discovery sweep volume. */
     private static final int DISCOVER_RADIUS = 12;
-    private static final int DISCOVER_BELOW = 4;
-    private static final int DISCOVER_ABOVE = 8;
+    /**
+     * Reaching further down than up on purpose. Logs lie on the ground, and
+     * the ground is often below you — a path through the Park, a rise, the lip
+     * of a clearing. Everything above head height is canopy.
+     */
+    private static final int DISCOVER_BELOW = 8;
+    private static final int DISCOVER_ABOVE = 6;
 
     /** New trees admitted per sweep, so one sweep cannot stall a frame. */
     private static final int MAX_NEW_PER_SWEEP = 8;
 
     /** How tall a trunk can be. */
     private static final int TRUNK_HEIGHT = 12;
+
+    /**
+     * How far below its base a tree still reads its own ground.
+     *
+     * A footprint claims columns, and a claimed column is the only thing that
+     * may report wood standing in it — discovery walks past birch whose column
+     * is already owned, on the understanding that its owner is watching. That
+     * understanding broke on a slope: scanning upward from the base only, a log
+     * lying a block or two downhill inside the footprint belonged to a tree that
+     * could not see it and was refused a tree of its own, so it never appeared
+     * at all. This is why a pile of logs on the ground would sometimes go
+     * unmarked while an identical pile ten blocks away was fine.
+     */
+    private static final int TRUNK_BELOW = 3;
 
     /**
      * How far apart in height two positions can be and still be one tree.
@@ -187,6 +206,21 @@ public class TreeRegenTracker {
     @FunctionalInterface
     public interface WoodSampler {
         boolean isWood(int x, int y, int z);
+    }
+
+    /**
+     * Whether something stands at a position at all — leaves included.
+     *
+     * Used to work out which of a tree's logs you can actually see. Every
+     * marker this mod has ever drawn has been on a real log, and it has still
+     * looked wrong, because a log two blocks up a Park birch is inside the
+     * canopy: what you see is leaves with a green box somewhere in them. The
+     * log to mark is the one you can see and reach, which means the one with
+     * air beside it.
+     */
+    @FunctionalInterface
+    public interface SolidSampler {
+        boolean isSolid(int x, int y, int z);
     }
 
     /**
@@ -370,6 +404,9 @@ public class TreeRegenTracker {
 
     /** Reused for every block probe; the hot path allocates nothing. */
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+    /** A second cursor, because exposure is read while the first is in use. */
+    private final BlockPos.MutableBlockPos solidCursor = new BlockPos.MutableBlockPos();
 
     /** Reused when collecting a tree's remaining logs. */
     private final long[] scratch = new long[MAX_WOOD_MARKS];
@@ -677,6 +714,10 @@ public class TreeRegenTracker {
             cursor.set(x, y, z);
             return isBirchAt(client, cursor);
         };
+        SolidSampler solid = (x, y, z) -> {
+            solidCursor.set(x, y, z);
+            return !client.level.getBlockState(solidCursor).isAir();
+        };
 
         for (Iterator<Map.Entry<BlockPos, Tree>> it = trees.entrySet().iterator(); it.hasNext(); ) {
             Tree tree = it.next().getValue();
@@ -723,7 +764,7 @@ public class TreeRegenTracker {
             }
             tree.nextProbeAt = now + NORMAL_PROBE_INTERVAL_MS;
 
-            boolean standing = probeTree(sampler, tree, now);
+            boolean standing = probeTree(sampler, solid, tree, now);
 
             if (!tree.downed && tree.standing && !standing) {
                 // Every column of this tree is empty: the clock starts now.
@@ -830,13 +871,13 @@ public class TreeRegenTracker {
      *
      * @return true while any wood remains
      */
-    boolean probeTree(WoodSampler sampler, Tree tree, long now) {
+    boolean probeTree(WoodSampler sampler, SolidSampler solid, Tree tree, long now) {
         boolean full = !tree.probedOnce || (now - tree.lastFullProbeAt) >= FULL_PROBE_INTERVAL_MS;
 
-        scanFootprint(sampler, tree, full);
+        scanFootprint(sampler, solid, tree, full);
         if (!full && scan.count == 0) {
             full = true;
-            scanFootprint(sampler, tree, true);
+            scanFootprint(sampler, solid, tree, true);
         }
 
         int radius = tree.radius;
@@ -880,8 +921,35 @@ public class TreeRegenTracker {
         return true;
     }
 
+    /**
+     * How many of a log's four sides are open to the air.
+     *
+     * Four is a log standing clear; zero is one buried in canopy. Four block
+     * reads per log, and only for logs that were found, so a bare trunk costs
+     * almost nothing and a dense one costs a few dozen reads on the slow sweep.
+     */
+    private static int exposure(SolidSampler solid, int x, int y, int z) {
+        if (solid == null) {
+            return 4;
+        }
+        int open = 0;
+        if (!solid.isSolid(x + 1, y, z)) {
+            open++;
+        }
+        if (!solid.isSolid(x - 1, y, z)) {
+            open++;
+        }
+        if (!solid.isSolid(x, y, z + 1)) {
+            open++;
+        }
+        if (!solid.isSolid(x, y, z - 1)) {
+            open++;
+        }
+        return open;
+    }
+
     /** Read the footprint into {@link #scan}. Allocates nothing. */
-    private void scanFootprint(WoodSampler sampler, Tree tree, boolean full) {
+    private void scanFootprint(WoodSampler sampler, SolidSampler solid, Tree tree, boolean full) {
         int mask = full ? tree.ownedMask : tree.liveMask;
         if (mask == 0) {
             mask = tree.ownedMask;
@@ -910,7 +978,7 @@ public class TreeRegenTracker {
                 int z = base.getZ() + dz;
                 boolean cellHasWood = false;
 
-                for (int dy = 0; dy < TRUNK_HEIGHT; dy++) {
+                for (int dy = -TRUNK_BELOW; dy < TRUNK_HEIGHT; dy++) {
                     int y = base.getY() + dy;
                     if (!sampler.isWood(x, y, z)) {
                         continue;
@@ -920,10 +988,13 @@ public class TreeRegenTracker {
                     if (scan.marks < MAX_WOOD_MARKS) {
                         scratch[scan.marks++] = BlockPos.asLong(x, y, z);
                     }
-                    // Vertical closeness to the wanted height decides, with a
-                    // strong penalty for stepping off the trunk, so the marker
-                    // sits on the trunk whenever the trunk has wood at all.
-                    int score = Math.abs(y - desired) + (Math.abs(dx) + Math.abs(dz)) * 8;
+                    // Lower is better, being what you can reach; the trunk
+                    // beats a branch; and above all, a log with air beside it
+                    // beats one walled in by leaves. Exposure dominates because
+                    // a marker you cannot see is the whole complaint.
+                    int score = Math.abs(y - desired)
+                            + (Math.abs(dx) + Math.abs(dz)) * 8
+                            + (4 - exposure(solid, x, y, z)) * 10;
                     if (score < scan.bestScore) {
                         scan.bestScore = score;
                         scan.bestX = x;

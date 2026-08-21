@@ -26,7 +26,7 @@ public final class BirchConfig {
      * Bumped when a default changes in a way an existing settings file would
      * otherwise override forever.
      */
-    private static final int CURRENT_VERSION = 2;
+    private static final int CURRENT_VERSION = 3;
 
     /** Upper bound on how many stops can be shown at once. */
     public static final int MAX_ROUTE_LENGTH = 32;
@@ -135,12 +135,15 @@ public final class BirchConfig {
     /**
      * Birch within reach of a spot before it is treated as somewhere to chop.
      *
-     * 2 takes anything that is more than one lone log — trunks and the piles of
-     * logs lying on the ground alike — while leaving single decorative logs
-     * alone. Set it to 1 to route to every piece of birch there is, or higher
-     * if the scenery where you forage keeps earning markers.
+     * 1 takes every piece of birch there is, which is the point: a single log
+     * lying on the ground is choppable and regenerates like anything else, and
+     * a threshold was only ever a crude stand-in for "do not make clutter".
+     * Clutter is the merge's job, and the merge now joins logs that touch
+     * rather than guessing from how far apart their bases are, so the
+     * threshold no longer has to exclude real birch to keep the view clean.
+     * Raise it if the scenery where you forage still earns markers.
      */
-    public int minTreeLogs = 2;
+    public int minTreeLogs = 1;
     /** Width of tracer and highlight lines, in pixels. */
     public double lineWidth = 4.0;
     /** Fill the block to mine with translucent colour, not just an outline. */
@@ -205,6 +208,13 @@ public final class BirchConfig {
     private void migrate() {
         if (configVersion < 2) {
             showFullPath = false;
+        }
+        if (configVersion < 3) {
+            // Two logs was a stand-in for "do not make clutter", and it cost
+            // real birch to buy that: a pair of logs lying on the ground is
+            // choppable and regrows, and it was being skipped. The merge does
+            // the decluttering properly now, so the threshold can stop.
+            minTreeLogs = 1;
         }
         configVersion = CURRENT_VERSION;
     }

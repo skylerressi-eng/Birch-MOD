@@ -60,7 +60,7 @@ final class Help {
         entry(source, "/route filled <true|false>", "fill the block to mine, or outline it only");
         entry(source, "/route width <0.5-10>", "line thickness");
         entry(source, "/route center <0-12>", "how high up a trunk to aim the marker");
-        entry(source, "/route minlogs <1-8>", "birch needed at a spot before it is marked — 2 takes trunks and log piles, 1 takes everything");
+        entry(source, "/route minlogs <1-8>", "birch needed at a spot before it is marked — 1 takes every log there is; raise it if scenery earns markers");
 
         header(source, "What it knows");
         entry(source, "/route gui", "the settings screen; the Routes tab imports and exports");
