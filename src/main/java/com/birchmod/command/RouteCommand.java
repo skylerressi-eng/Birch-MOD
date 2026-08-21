@@ -6,6 +6,7 @@ import com.birchmod.config.BirchConfig;
 import com.birchmod.BirchMod;
 import com.birchmod.route.LapTracker;
 import com.birchmod.route.RecordedRoute;
+import com.birchmod.route.RouteCodec;
 import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteOptimizer;
@@ -47,7 +48,7 @@ public final class RouteCommand {
             "true", "false", "start", "stop", "cancel", "compile", "list", "use",
             "strict", "minlogs", "stats", "help", "setdefault", "default", "auto",
             "best", "delete", "tracers", "path", "chain", "length", "width",
-            "filled", "labels", "center");
+            "filled", "labels", "center", "export", "import", "gui");
 
     private RouteCommand() {
     }
@@ -159,6 +160,39 @@ public final class RouteCommand {
                                     feedback(ctx.getSource(), "§8  Walk away and back to re-scan.");
                                     return 1;
                                 })))
+                .then(ClientCommands.literal("export")
+                        .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx -> {
+                            String name = StringArgumentType.getString(ctx, "name");
+                            RecordedRoute route = RouteLibrary.get(name);
+                            if (route == null) {
+                                feedback(ctx.getSource(), "§cNo route called §f" + name);
+                                return 0;
+                            }
+                            String code = RouteCodec.encode(route);
+                            boolean copied = copyToClipboard(code);
+                            feedback(ctx.getSource(), "§6§lBirch Optimizer §7— exported §f" + name);
+                            feedback(ctx.getSource(), copied
+                                    ? "§aCopied to your clipboard §8(" + code.length() + " characters)"
+                                    : "§eCould not reach the clipboard; the code is below.");
+                            if (!copied) {
+                                feedback(ctx.getSource(), "§7" + code);
+                            }
+                            feedback(ctx.getSource(), "§8Whoever you send it to runs "
+                                    + "§f/route import <code>§8.");
+                            return 1;
+                        })))
+                .then(ClientCommands.literal("import")
+                        .then(ClientCommands.argument("code", StringArgumentType.greedyString())
+                                .executes(ctx -> importRoute(ctx.getSource(), routeBuilder,
+                                        StringArgumentType.getString(ctx, "code"))))
+                        .executes(ctx -> importRoute(ctx.getSource(), routeBuilder, clipboard())))
+                .then(ClientCommands.literal("gui").executes(ctx -> {
+                    net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+                    if (client != null) {
+                        client.execute(() -> client.setScreen(new com.birchmod.gui.BirchScreen(null)));
+                    }
+                    return 1;
+                }))
                 .then(ClientCommands.literal("stats").executes(ctx -> {
                     learned(ctx.getSource());
                     return 1;
@@ -303,6 +337,71 @@ public final class RouteCommand {
                                             + BirchConfig.get().treeCenterHeight + " blocks");
                                     return 1;
                                 }))));
+    }
+
+    /**
+     * Take a route somebody else recorded.
+     *
+     * Never overwrites: an imported name that is already taken gets a number,
+     * because losing a route you walked yourself to a paste is not a trade
+     * anyone would accept.
+     */
+    private static int importRoute(FabricClientCommandSource source,
+                                   RouteBuilder routeBuilder,
+                                   String code) {
+        if (code == null || code.isBlank()) {
+            feedback(source, "§cNothing to import. §f/route import <code>§c, "
+                    + "or copy a code first and run §f/route import§c on its own.");
+            return 0;
+        }
+        RecordedRoute route;
+        try {
+            route = RouteCodec.decode(code.trim());
+        } catch (RouteCodec.CodecException e) {
+            feedback(source, "§c" + e.getMessage());
+            return 0;
+        }
+
+        String wanted = route.name;
+        route.name = RouteCodec.freeName(wanted, RouteLibrary::exists);
+        RouteLibrary.save(route);
+        RouteLibrary.setActive(route.name);
+        routeBuilder.resetCommitment();
+
+        feedback(source, "§aImported §f" + route.name + "§a with "
+                + route.size() + " stops, and you are on it now.");
+        if (!route.name.equals(wanted)) {
+            feedback(source, "§8You already had a §f" + wanted
+                    + "§8, so this one was saved as §f" + route.name + "§8.");
+        }
+        feedback(source, "§8§f/route setdefault " + route.name
+                + "§8 to keep it after a restart.");
+        return 1;
+    }
+
+    private static String clipboard() {
+        net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+        if (client == null) {
+            return null;
+        }
+        try {
+            return client.keyboardHandler.getClipboard();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static boolean copyToClipboard(String text) {
+        net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+        if (client == null) {
+            return false;
+        }
+        try {
+            client.keyboardHandler.setClipboard(text);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Start following a saved route by name. */

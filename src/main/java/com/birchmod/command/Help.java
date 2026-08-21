@@ -20,6 +20,12 @@ final class Help {
     static void route(FabricClientCommandSource source) {
         line(source, "§6§lBirch Optimizer §7— route commands");
 
+        header(source, "Sharing routes");
+        entry(source, "/route export <name>", "copy a share code for it to your clipboard");
+        entry(source, "/route import <code>", "take a route somebody sent you");
+        entry(source, "/route import", "take whatever route code is on your clipboard");
+        note(source, "Importing never overwrites: a name you already have gets a number.");
+
         header(source, "Recording a route");
         entry(source, "/route start <name>", "begin recording; chop trees in the order you want them");
         entry(source, "/route stop", "save the recording and start following it");
@@ -57,6 +63,7 @@ final class Help {
         entry(source, "/route minlogs <1-8>", "birch needed at a spot before it is marked — 2 takes trunks and log piles, 1 takes everything");
 
         header(source, "What it knows");
+        entry(source, "/route gui", "the settings screen, on the Routes tab");
         entry(source, "/route", "the current route, stop by stop, with what is left on each");
         entry(source, "/route stats", "measured leg times, travel speed and chop history");
 
@@ -67,6 +74,7 @@ final class Help {
         line(source, "§6§lBirch Optimizer §7— general commands");
 
         header(source, "Where you stand");
+        entry(source, "/birch gui", "every setting on one screen");
         entry(source, "/birch", "birch/hour, prices, session totals and rank");
         entry(source, "/birch stats", "the full breakdown, session and lifetime");
         entry(source, "/birch bazaar", "live prices and spreads across birch products");

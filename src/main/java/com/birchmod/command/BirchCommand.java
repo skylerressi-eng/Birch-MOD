@@ -209,11 +209,36 @@ public final class BirchCommand {
                             return 1;
                         })))
 
+                // /birch gui — every setting on one screen
+                .then(ClientCommands.literal("gui").executes(ctx -> {
+                    openSettings();
+                    return 1;
+                }))
+                .then(ClientCommands.literal("menu").executes(ctx -> {
+                    openSettings();
+                    return 1;
+                }))
+
                 // /birch help
                 .then(ClientCommands.literal("help").executes(ctx -> {
                     Help.birch(ctx.getSource());
                     return 1;
                 })));
+    }
+
+    /**
+     * Open the settings screen.
+     *
+     * Deferred to the next opportunity rather than set here and now: this runs
+     * while the chat screen is still closing, and a screen opened underneath
+     * that gets closed along with it.
+     */
+    private static void openSettings() {
+        net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+        if (client == null) {
+            return;
+        }
+        client.execute(() -> client.setScreen(new com.birchmod.gui.BirchScreen(null)));
     }
 
     // ---- Output ----

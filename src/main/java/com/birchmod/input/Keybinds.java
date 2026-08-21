@@ -26,6 +26,7 @@ public final class Keybinds {
     private static KeyMapping toggleHud;
     private static KeyMapping toggleTimers;
     private static KeyMapping resetSession;
+    private static KeyMapping openSettings;
 
     private Keybinds() {
     }
@@ -37,6 +38,11 @@ public final class Keybinds {
                 "key.birchoptimizer.toggle_timers", GLFW.GLFW_KEY_N, CATEGORY));
         resetSession = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.birchoptimizer.reset_session", InputConstants.Type.KEYSYM,
+                InputConstants.UNKNOWN.getValue(), CATEGORY));
+        // Unbound by default: a settings screen is worth a key, but not worth
+        // taking one somebody already uses.
+        openSettings = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.birchoptimizer.open_settings", InputConstants.Type.KEYSYM,
                 InputConstants.UNKNOWN.getValue(), CATEGORY));
     }
 
@@ -58,6 +64,10 @@ public final class Keybinds {
             BirchConfig.save();
             Notifier.actionBar(config.worldTimersEnabled
                     ? "§aTree timers on" : "§cTree timers off");
+        }
+
+        while (openSettings != null && openSettings.consumeClick()) {
+            client.setScreen(new com.birchmod.gui.BirchScreen(null));
         }
 
         while (resetSession != null && resetSession.consumeClick()) {
