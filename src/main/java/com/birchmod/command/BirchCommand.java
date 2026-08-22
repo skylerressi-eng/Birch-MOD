@@ -22,6 +22,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -183,6 +184,12 @@ public final class BirchCommand {
                             return 1;
                         })))
 
+                // /birch rate — the working behind birch/hr, when it looks wrong
+                .then(ClientCommands.literal("rate").executes(ctx -> {
+                    rateBreakdown(ctx.getSource(), tracker);
+                    return 1;
+                }))
+
                 // /birch diag — what has failed, for bug reports
                 .then(ClientCommands.literal("diag").executes(ctx -> {
                     diagnostics(ctx.getSource());
@@ -323,6 +330,26 @@ public final class BirchCommand {
 
         long mins = bazaar.getMinutesSinceUpdate();
         feedback(source, "§8Updated " + (mins <= 0 ? "just now" : mins + "m ago") + ", refreshes every 10m.");
+    }
+
+    /**
+     * Show the working behind birch/hr.
+     *
+     * Birch/hr is one number standing on several separate things — which
+     * stacks are recognised, what each is valued at, and how much time has
+     * counted as foraging — and when it looks wrong the number itself says
+     * nothing about which of them is at fault. Sacks in particular are
+     * invisible to a mod that reads your inventory, and this is where that
+     * shows up as "nothing is being counted" rather than as a quiet zero.
+     */
+    private static void rateBreakdown(FabricClientCommandSource source, BirchTracker tracker) {
+        header(source);
+        feedback(source, "§7What is being counted as birch:");
+        for (String line : tracker.explain(Minecraft.getInstance())) {
+            feedback(source, "§f" + line);
+        }
+        feedback(source, "§8If your birch goes into a sack it never reaches your");
+        feedback(source, "§8inventory, and nothing above will move while you chop.");
     }
 
     /** Report which components have thrown — the first thing to check on a bug. */

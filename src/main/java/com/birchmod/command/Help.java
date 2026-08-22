@@ -105,6 +105,7 @@ final class Help {
         entry(source, "/birch name <username>", "which account to look up");
 
         header(source, "When something looks wrong");
+        entry(source, "/birch rate", "the working behind birch/hr, when it looks wrong");
         entry(source, "/birch diag", "what has failed, and how often");
         entry(source, "/birch safemode <true|false>", "turn off all in-world drawing, keep tracking");
 

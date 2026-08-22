@@ -1,6 +1,7 @@
 package com.birchmod.tracking;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
@@ -51,24 +52,20 @@ public class BirchTracker {
      */
     private static final int REFILL_SUSPICION_THRESHOLD = 64;
 
-    /**
-     * How long birch that vanished stays remembered as owed back.
-     *
-     * The empty-inventory guard above only catches a resend that blanked the
-     * whole inventory. A warp often leaves a few logs behind, so the count goes
-     * 403 to 3 and back to 403, and a 400-log "haul" that was never chopped
-     * goes into the rate. What gives it away is not the size of the jump but
-     * that the same birch left a moment earlier: a rise is only new birch once
-     * it has paid back what just disappeared. Kept short, because selling a
-     * stack is also a disappearance, and nobody sells and re-chops four hundred
-     * logs inside five seconds.
-     */
-    private static final long RESEND_WINDOW_MS = 5_000L;
 
-    /** Birch-named items that are not raw birch logs. */
+    /** Birch-named items that are not birch you chopped. */
     private static final List<String> NON_LOG_BIRCH =
-            List.of("enchanted", "plank", "sapling", "leaves", "slab", "stair",
+            List.of("plank", "sapling", "leaves", "slab", "stair",
                     "door", "fence", "button", "sign", "axe", "boat");
+
+    /**
+     * Raw birch inside one Enchanted Birch Wood.
+     *
+     * Skyblock's standard enchanted-item ratio, and the reason this matters at
+     * all: with a compactor running, most of what you chop spends most of its
+     * life in this form.
+     */
+    static final int ENCHANTED_LOGS = 160;
 
     /**
      * The rolling window the rate is measured over.
@@ -89,10 +86,6 @@ public class BirchTracker {
     private int lastInventoryCount = -1;
     private int tickCounter = 0;
     private Level lastLevel = null;
-
-    /** Birch that left the inventory recently, and when it went. */
-    private long pendingLoss = 0L;
-    private long lossAt = 0L;
 
     public void tick(Minecraft client) {
         if (client == null || client.player == null) {
@@ -115,6 +108,16 @@ public class BirchTracker {
         }
         tickCounter = 0;
 
+        // What a resend really looks like: not birch going missing, but every
+        // slot going missing at once. Nothing you can do while playing empties
+        // your armour and your axe as well, so this is safe to read as the
+        // server having not sent the inventory yet — and re-baselining means
+        // the refill is a new starting point rather than a haul.
+        if (countOccupied(client.player) == 0) {
+            invalidateBaseline(level);
+            return;
+        }
+
         int current = countBirch(client.player);
 
         if (lastInventoryCount < 0) {
@@ -126,7 +129,7 @@ public class BirchTracker {
         lastInventoryCount = current;
 
         long now = System.currentTimeMillis();
-        int gained = gainFrom(previous, current, now);
+        int gained = gainFrom(previous, current);
 
         totalCollected += gained;
 
@@ -146,37 +149,24 @@ public class BirchTracker {
     }
 
     /**
-     * How much of a rise in the inventory count is really birch you just cut.
+     * How much of a rise in the birch count is really birch you just cut.
      *
-     * Three things can push the number up, and only one of them is chopping.
-     * The server resending the inventory after a warp is the common one, and it
-     * is recognised by what preceded it rather than by its size — birch that
-     * reappears just after the same amount vanished is the same birch.
+     * Deliberately almost nothing. An earlier version of this tried to be
+     * clever: it remembered birch that had vanished and made the next rise pay
+     * it back before counting, on the theory that birch reappearing just after
+     * the same amount left is the same birch. That is true of a warp and false
+     * of everything else that removes birch — compacting, a sack, dropping a
+     * stack, selling — and each of those armed a debt that then ate the next
+     * real haul. A guard that silently subtracts what you actually chopped is
+     * worse than the problem it was added for, so the warp case is now handled
+     * where it can be recognised for certain: {@link #tick} re-baselines when
+     * the whole inventory blanks, which is what a resend actually looks like.
      */
-    int gainFrom(int previous, int current, long now) {
-        // Expire an old loss before recording a new one, or every loss would be
-        // stale the moment it happened.
-        if (pendingLoss > 0L && now - lossAt > RESEND_WINDOW_MS) {
-            pendingLoss = 0L;
-        }
-
+    static int gainFrom(int previous, int current) {
         int delta = current - previous;
         if (delta <= 0) {
-            if (delta < 0) {
-                pendingLoss += -delta;
-                lossAt = now;
-            }
             return 0;
         }
-
-        // Pay back what just disappeared before calling any of it a haul. Only
-        // the surplus is new birch, so chopping through a resend still counts.
-        if (pendingLoss > 0L) {
-            long repaid = Math.min(delta, pendingLoss);
-            pendingLoss -= repaid;
-            delta -= (int) repaid;
-        }
-
         // A jump nothing explains: too big to have been chopped in a quarter
         // second, or a stack appearing in an inventory that read as empty.
         if (delta > MAX_PLAUSIBLE_DELTA
@@ -191,11 +181,24 @@ public class BirchTracker {
         int total = 0;
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
-            if (!stack.isEmpty() && isBirch(stack)) {
-                total += stack.getCount();
+            if (!stack.isEmpty()) {
+                total += birchValue(hoverName(stack), stack.getCount(),
+                        stack.is(Items.BIRCH_LOG) || stack.is(Items.BIRCH_WOOD));
             }
         }
         return total;
+    }
+
+    /** How many slots hold anything at all. Zero means the inventory blanked. */
+    private int countOccupied(LocalPlayer player) {
+        Inventory inventory = player.getInventory();
+        int occupied = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            if (!inventory.getItem(i).isEmpty()) {
+                occupied++;
+            }
+        }
+        return occupied;
     }
 
     /** Re-baseline on the next sample, optionally adopting a new level. */
@@ -205,36 +208,99 @@ public class BirchTracker {
         tickCounter = 0;
     }
 
-    private boolean isBirch(ItemStack stack) {
-        if (stack.is(Items.BIRCH_LOG) || stack.is(Items.BIRCH_WOOD)) {
-            return true;
-        }
-        // Skyblock reskins vanilla items, so fall back to the display name.
+    /** The stack's display name in lower case, or null if it has none. */
+    private static String hoverName(ItemStack stack) {
         try {
             String name = stack.getHoverName().getString();
-            if (name == null) {
-                return false;
-            }
-            String clean = name.toLowerCase(Locale.ROOT);
-            if (!clean.contains("birch")) {
-                return false;
-            }
-            // "Enchanted Birch Wood" is 160 logs and "Birch Planks"/saplings are
-            // not logs at all — counting any of them as one log skews the rate.
+            return name == null ? null : name.toLowerCase(Locale.ROOT);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * What a stack is worth in raw birch logs.
+     *
+     * The name is consulted before the item id, which is the whole point.
+     * Skyblock reskins vanilla items, so Enchanted Birch Wood <em>is</em> a
+     * birch log as far as the game is concerned — and asking the id first
+     * answered "yes, birch" and returned before the name was ever examined.
+     * The exclusion list below it was unreachable for every reskinned item it
+     * existed to catch, so one Enchanted Birch Wood counted as a single log
+     * instead of the {@value #ENCHANTED_LOGS} it holds.
+     *
+     * Valuing it properly also makes compacting invisible, which is what it
+     * should always have been: 160 logs become one enchanted worth 160, the
+     * count does not move, and nothing has to be explained away afterwards.
+     *
+     * @param name     lower-case display name, or null
+     * @param count    stack size
+     * @param vanilla  whether the underlying item is a vanilla birch log
+     */
+    static int birchValue(String name, int count, boolean vanilla) {
+        if (name != null && !name.isEmpty()) {
             for (String excluded : NON_LOG_BIRCH) {
-                if (clean.contains(excluded)) {
-                    return false;
+                if (name.contains(excluded)) {
+                    return 0;
                 }
             }
-            return true;
-        } catch (Exception ignored) {
-            return false;
+            if (!name.contains("birch")) {
+                // A reskin that is not birch at all, whatever it is made of.
+                return 0;
+            }
+            return name.contains("enchanted") ? count * ENCHANTED_LOGS : count;
         }
+        return vanilla ? count : 0;
     }
 
     /** @return birch collected per hour of foraging, over the last hour. */
     public double getBirchPerHour() {
         return birchPerHour;
+    }
+
+    /**
+     * What the counter can currently see, in plain words.
+     *
+     * The rate is one number derived from several things that can each be
+     * wrong on their own — which stacks are recognised as birch, what they are
+     * valued at, how much time has been counted as foraging. When the answer
+     * looks wrong there is no way to tell which of those it is by staring at
+     * the number, so this prints the working. Read on demand by a command, on
+     * the client thread.
+     */
+    public List<String> explain(Minecraft client) {
+        List<String> out = new ArrayList<>();
+        if (client == null || client.player == null) {
+            out.add("No player: nothing is being counted.");
+            return out;
+        }
+
+        Inventory inventory = client.player.getInventory();
+        int seen = 0;
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            String name = hoverName(stack);
+            int value = birchValue(name, stack.getCount(),
+                    stack.is(Items.BIRCH_LOG) || stack.is(Items.BIRCH_WOOD));
+            if (value <= 0) {
+                continue;
+            }
+            seen++;
+            out.add("  " + (name == null ? "(unnamed birch log)" : name)
+                    + " x" + stack.getCount() + " = " + value + " logs");
+        }
+        if (seen == 0) {
+            out.add("  nothing in your inventory is being counted as birch");
+        }
+
+        out.add("Inventory total: " + lastInventoryCount + " logs");
+        out.add("In the last hour: " + window.collected() + " logs over "
+                + (window.activeMs() / 1000L) + "s of foraging");
+        out.add("Rate: " + Math.round(birchPerHour) + "/hr");
+        return out;
     }
 
     public long getTotalCollected() {
@@ -246,8 +312,6 @@ public class BirchTracker {
         birchPerHour = 0.0;
         totalCollected = 0L;
         lastInventoryCount = -1;
-        pendingLoss = 0L;
-        lossAt = 0L;
     }
 
     /**
