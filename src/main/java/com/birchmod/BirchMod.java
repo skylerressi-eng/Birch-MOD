@@ -10,8 +10,8 @@ import com.birchmod.hud.BirchHud;
 import com.birchmod.input.Keybinds;
 import com.birchmod.render.TracerRenderer;
 import com.birchmod.render.TreeTimerRenderer;
-import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.LapTracker;
+import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteRecorder;
 import com.birchmod.route.TravelGraph;
@@ -22,6 +22,7 @@ import com.birchmod.tracking.LeftoverWatch;
 import com.birchmod.tracking.MovementTracker;
 import com.birchmod.tracking.TreeRegenTracker;
 import com.birchmod.util.Guard;
+import com.birchmod.util.Notifier;
 import com.birchmod.util.SkyblockDetector;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -184,7 +185,7 @@ public class BirchMod implements ClientModInitializer {
         double best = LapTracker.bestLapForActive();
         boolean record = best > 0.0 && Math.abs(best - seconds) < 1.0e-9;
 
-        com.birchmod.util.Notifier.actionBar(record
+        Notifier.actionBar(record
                 ? "§6§lBEST LAP §e" + LapTracker.format(seconds)
                 : "§aLap " + lapTracker.getLapsCompleted() + " §f"
                         + LapTracker.format(seconds)

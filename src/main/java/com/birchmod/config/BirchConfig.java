@@ -1,11 +1,8 @@
 package com.birchmod.config;
 
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.birchmod.util.SafeFile;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -179,13 +176,11 @@ public final class BirchConfig {
 
     public static void load() {
         try {
-            Path file = path();
-            if (Files.exists(file)) {
-                try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                    BirchConfig loaded = GSON.fromJson(reader, BirchConfig.class);
-                    if (loaded != null) {
-                        instance = loaded;
-                    }
+            String json = SafeFile.read(path(), BirchConfig::parses);
+            if (json != null) {
+                BirchConfig loaded = GSON.fromJson(json, BirchConfig.class);
+                if (loaded != null) {
+                    instance = loaded;
                 }
             }
         } catch (Exception e) {
@@ -241,13 +236,18 @@ public final class BirchConfig {
 
     public static void save() {
         try {
-            Path file = path();
-            Files.createDirectories(file.getParent());
-            try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                GSON.toJson(instance, writer);
-            }
+            SafeFile.write(path(), GSON.toJson(instance));
         } catch (Exception ignored) {
             // Non-fatal: the mod still runs with in-memory settings.
+        }
+    }
+
+    /** Whether this text is settings we could actually load. */
+    private static boolean parses(String json) {
+        try {
+            return GSON.fromJson(json, BirchConfig.class) != null;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 }

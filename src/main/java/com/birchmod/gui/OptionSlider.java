@@ -14,7 +14,7 @@ import net.minecraft.network.chat.Component;
  * ahead" lands on whole numbers and one for line width lands on halves —
  * dragging to 7.3183 trees would be worse than no slider at all.
  */
-public class OptionSlider extends AbstractSliderButton {
+public final class OptionSlider extends AbstractSliderButton {
 
     private static final DecimalFormat WHOLE = new DecimalFormat("#0");
     private static final DecimalFormat FRACTION = new DecimalFormat("#0.0");

@@ -41,8 +41,20 @@ public class ImportScreen extends Screen {
         this.parent = parent;
     }
 
+    /** Set when the screen could not be built; closed on the next tick. */
+    private boolean broken = false;
+
     @Override
     protected void init() {
+        // A screen is drawn and rebuilt by the game, not by us: anything that
+        // escapes here reaches the game's own loop and becomes a crash report.
+        // A screen that could not be built has no buttons on it — including
+        // the one that closes it — so leave rather than strand the player in
+        // an empty window.
+        broken = !Chrome.attempt("screen", this::buildScreen);
+    }
+
+    private void buildScreen() {
         int top = Chrome.CONTENT_TOP;
         int bottom = Chrome.contentBottom(height);
         int listWidth = width - Chrome.MARGIN * 2;
@@ -77,7 +89,15 @@ public class ImportScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        updateButtons();
+        if (broken) {
+            broken = false;
+            Notifier.chat(
+                    "§cBirch Optimizer could not open that screen. "
+                            + "Your settings are unchanged; see /birch diag.");
+            onClose();
+            return;
+        }
+        Chrome.guard("screen", this::updateButtons);
     }
 
     private void updateButtons() {

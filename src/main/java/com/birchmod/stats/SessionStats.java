@@ -1,11 +1,8 @@
 package com.birchmod.stats;
 
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.birchmod.util.SafeFile;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -317,19 +314,26 @@ public final class SessionStats {
 
     public static void load() {
         try {
-            Path file = path();
-            if (Files.exists(file)) {
-                try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                    Lifetime loaded = GSON.fromJson(reader, Lifetime.class);
-                    if (loaded != null) {
-                        lifetime = loaded;
-                    }
+            String json = SafeFile.read(path(), SessionStats::parses);
+            if (json != null) {
+                Lifetime loaded = GSON.fromJson(json, Lifetime.class);
+                if (loaded != null) {
+                    lifetime = loaded;
                 }
             }
         } catch (Exception e) {
             lifetime = new Lifetime();
         }
         resetSession();
+    }
+
+    /** Whether this text is a lifetime record we could actually load. */
+    private static boolean parses(String json) {
+        try {
+            return GSON.fromJson(json, Lifetime.class) != null;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /** Save at most once per {@link #SAVE_INTERVAL_MS}, off the client thread. */
@@ -367,11 +371,7 @@ public final class SessionStats {
 
     private static void write(Lifetime data) {
         try {
-            Path file = path();
-            Files.createDirectories(file.getParent());
-            try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                GSON.toJson(data, writer);
-            }
+            SafeFile.write(path(), GSON.toJson(data));
         } catch (Exception ignored) {
             // Stats are not worth crashing the client over.
         }

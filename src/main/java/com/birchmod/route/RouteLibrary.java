@@ -1,9 +1,5 @@
 package com.birchmod.route;
 
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import com.birchmod.util.SafeFile;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -282,26 +279,43 @@ public final class RouteLibrary {
             // promise this makes is that a bad path costs you a route, not the
             // rest of the tick.
             Path file = path();
-            if (Files.exists(file)) {
-                try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                    Store loaded = GSON.fromJson(reader, Store.class);
-                    if (loaded != null) {
-                        store = loaded;
-                        if (store.routes == null) {
-                            store.routes = new LinkedHashMap<>();
-                        }
-                        sanitise();
-                        // A default is a standing instruction, so it wins over
-                        // whatever happened to be active when you logged out.
-                        if (store.defaultRoute != null
-                                && store.routes.containsKey(store.defaultRoute)) {
-                            store.active = store.defaultRoute;
-                        }
-                    }
+
+            // A file that reads but will not parse is the case the backup is
+            // for, and parsing is the only way to tell. Trying it here rather
+            // than after the fact is what lets the fallback happen at all: the
+            // old code caught the failure too late to do anything but start
+            // over with an empty library, and then saved that over the routes.
+            String json = SafeFile.read(file, RouteLibrary::parses);
+            if (json == null) {
+                return;
+            }
+
+            Store loaded = GSON.fromJson(json, Store.class);
+            if (loaded != null) {
+                store = loaded;
+                if (store.routes == null) {
+                    store.routes = new LinkedHashMap<>();
+                }
+                sanitise();
+                // A default is a standing instruction, so it wins over
+                // whatever happened to be active when you logged out.
+                if (store.defaultRoute != null
+                        && store.routes.containsKey(store.defaultRoute)) {
+                    store.active = store.defaultRoute;
                 }
             }
         } catch (Exception e) {
             store = new Store();
+        }
+    }
+
+    /** Whether this text is a route library we could actually load. */
+    private static boolean parses(String json) {
+        try {
+            Store candidate = GSON.fromJson(json, Store.class);
+            return candidate != null;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
@@ -336,13 +350,11 @@ public final class RouteLibrary {
 
     public static void persist() {
         try {
-            Path file = path();
-            Files.createDirectories(file.getParent());
-            try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                GSON.toJson(store, writer);
-            }
+            SafeFile.write(path(), GSON.toJson(store));
         } catch (Exception ignored) {
-            // Losing a route is not worth crashing the client over.
+            // Losing a route is not worth crashing the client over — and the
+            // save above never empties the real file, so a failure here leaves
+            // the routes you already had exactly where they were.
         }
     }
 }

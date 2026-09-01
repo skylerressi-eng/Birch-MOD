@@ -3,6 +3,8 @@ package com.birchmod.gui;
 import java.util.List;
 import java.util.function.Consumer;
 
+import com.birchmod.util.Guard;
+
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -91,6 +93,30 @@ public final class Chrome {
 
         String title = "Birch Optimizer";
         graphics.text(font, "§6§l" + title, (width - font.width(title)) / 2, TITLE_Y, TEXT, true);
+    }
+
+    /**
+     * Run something a screen does, without letting it take the game down.
+     *
+     * Every tick and render path in this mod goes through {@link Guard}, on the
+     * principle that an overlay showing tree timers is never worth somebody's
+     * session. The screens were the exception, and they are the newest code
+     * here and the only part that touches the disk and the clipboard while the
+     * game is waiting on it — a full disk or a permission the launcher does not
+     * have would have come out as a crash report.
+     */
+    public static void guard(String what, Runnable action) {
+        Guard.run("gui-" + what, action);
+    }
+
+    /** As {@link #guard}, but reports whether the action got through. */
+    public static boolean attempt(String what, Runnable action) {
+        return Guard.attempt("gui-" + what, action);
+    }
+
+    /** A button whose action cannot crash the game. */
+    public static Button.OnPress safely(String what, Runnable action) {
+        return button -> guard(what, action);
     }
 
     /** Bottom of the usable area. */

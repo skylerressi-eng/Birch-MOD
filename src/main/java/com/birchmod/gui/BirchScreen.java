@@ -7,6 +7,7 @@ import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
 import com.birchmod.config.BirchConfig;
+import com.birchmod.util.Notifier;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -82,8 +83,20 @@ public class BirchScreen extends Screen {
         return this.font;
     }
 
+    /** Set when the screen could not be built; closed on the next tick. */
+    private boolean broken = false;
+
     @Override
     protected void init() {
+        // A screen is drawn and rebuilt by the game, not by us: anything that
+        // escapes here reaches the game's own loop and becomes a crash report.
+        // A screen that could not be built has no buttons on it — including
+        // the one that closes it — so leave rather than strand the player in
+        // an empty window.
+        broken = !Chrome.attempt("screen", this::buildScreen);
+    }
+
+    private void buildScreen() {
         Chrome.tabs(width, activeTab, this::openTab, this::addRenderableWidget);
 
         int top = Chrome.CONTENT_TOP;
@@ -149,10 +162,20 @@ public class BirchScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        if (rebuildRequested) {
-            rebuildRequested = false;
-            rebuildWidgets();
+        if (broken) {
+            broken = false;
+            Notifier.chat(
+                    "§cBirch Optimizer could not open that screen. "
+                            + "Your settings are unchanged; see /birch diag.");
+            onClose();
+            return;
         }
+        Chrome.guard("screen", () -> {
+            if (rebuildRequested) {
+                rebuildRequested = false;
+                rebuildWidgets();
+            }
+        });
     }
 
     @Override

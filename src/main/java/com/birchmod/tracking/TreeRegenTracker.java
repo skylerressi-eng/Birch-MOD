@@ -812,17 +812,6 @@ public class TreeRegenTracker {
     }
 
     /**
-     * Announce a fell once the tree has stayed down long enough to be real.
-     *
-     * The route recorder writes a stop and the travel graph times a leg the
-     * moment they hear about a chop, and neither can be told to forget. A chunk
-     * flickering to air for a tick would therefore save a phantom stop into a
-     * saved route and poison a leg time permanently. Waiting out
-     * {@link #MIN_DOWNED_MS} costs a second and a half of delay and removes the
-     * whole class of problem — and because both ends of a leg are delayed by
-     * the same amount, the times measured between them are unaffected.
-     */
-    /**
      * Whether this tree was plausibly felled by the player.
      *
      * Groves are shared. A tree dropping across the island is somebody else's
@@ -834,6 +823,17 @@ public class TreeRegenTracker {
                 && tree.downedAt - tree.lastNearAt <= CHOP_CREDIT_WINDOW_MS;
     }
 
+    /**
+     * Announce a fell once the tree has stayed down long enough to be real.
+     *
+     * The route recorder writes a stop and the travel graph times a leg the
+     * moment they hear about a chop, and neither can be told to forget. A chunk
+     * flickering to air for a tick would therefore save a phantom stop into a
+     * saved route and poison a leg time permanently. Waiting out
+     * {@link #MIN_DOWNED_MS} costs a second and a half of delay and removes the
+     * whole class of problem — and because both ends of a leg are delayed by
+     * the same amount, the times measured between them are unaffected.
+     */
     private void confirmChop(Tree tree, long now) {
         if (!tree.downed || tree.chopReported || now - tree.downedAt < MIN_DOWNED_MS) {
             return;

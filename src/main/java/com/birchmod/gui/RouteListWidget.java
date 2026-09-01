@@ -20,7 +20,7 @@ import net.minecraft.network.chat.Component;
  * words, because they are true of at most one route each and a column of
  * mostly-blank text would be worse than a symbol.
  */
-public class RouteListWidget extends ObjectSelectionList<RouteListWidget.RouteEntry> {
+public final class RouteListWidget extends ObjectSelectionList<RouteListWidget.RouteEntry> {
 
     private static final int ROW_HEIGHT = 26;
 

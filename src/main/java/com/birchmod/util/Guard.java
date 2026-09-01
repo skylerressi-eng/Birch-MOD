@@ -39,13 +39,29 @@ public final class Guard {
      * @param feature stable name used for reporting and for disabling
      */
     public static void run(String feature, Runnable action) {
+        attempt(feature, action);
+    }
+
+    /**
+     * As {@link #run}, but says whether the action got through.
+     *
+     * Most callers have nothing useful to do about a failure — a tick that did
+     * not happen is simply a tick that did not happen. A screen is different:
+     * if the thing that failed was building it, the player is left looking at
+     * an empty window with no buttons on it, including the one that closes it.
+     *
+     * @return true if the action ran without throwing
+     */
+    public static boolean attempt(String feature, Runnable action) {
         if (disabled.contains(feature)) {
-            return;
+            return false;
         }
         try {
             action.run();
+            return true;
         } catch (Throwable t) {
             recordFailure(feature, t);
+            return false;
         }
     }
 

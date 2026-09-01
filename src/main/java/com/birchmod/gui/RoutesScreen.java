@@ -42,6 +42,13 @@ public class RoutesScreen extends Screen {
     /** Redrawn each frame from the selection, so the panel never lies. */
     private String shownName = null;
 
+    /** How long a primed Delete stays primed before it forgets. */
+    private static final long CONFIRM_WINDOW_MS = 4_000L;
+
+    /** The route Delete is currently asking about, and until when. */
+    private String armedFor = null;
+    private long armedUntil = 0L;
+
     public RoutesScreen(Screen parent) {
         super(Component.literal("Routes"));
         this.parent = parent;
@@ -51,8 +58,20 @@ public class RoutesScreen extends Screen {
         return BirchMod.regenTracker != null ? BirchMod.regenTracker.getRegenSeconds() : 60.0;
     }
 
+    /** Set when the screen could not be built; closed on the next tick. */
+    private boolean broken = false;
+
     @Override
     protected void init() {
+        // A screen is drawn and rebuilt by the game, not by us: anything that
+        // escapes here reaches the game's own loop and becomes a crash report.
+        // A screen that could not be built has no buttons on it — including
+        // the one that closes it — so leave rather than strand the player in
+        // an empty window.
+        broken = !Chrome.attempt("screen", this::buildScreen);
+    }
+
+    private void buildScreen() {
         Chrome.tabs(width, TAB_INDEX, this::openTab, this::addRenderableWidget);
 
         int top = Chrome.CONTENT_TOP;
@@ -105,16 +124,11 @@ public class RoutesScreen extends Screen {
                 "Put a share code on the clipboard, to paste straight into a chat.")));
 
         y += BUTTON_HEIGHT + BUTTON_GAP;
-        delete = addRenderableWidget(Button.builder(Component.literal("§cDelete"), b -> {
-            withSelection(name -> {
-                RouteLibrary.delete(name);
-                resetRoute();
-                Notifier.actionBar("§7Deleted " + name);
-                list.refresh(regenSeconds());
-            });
-        }).bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
+        delete = addRenderableWidget(Button.builder(Component.literal("§cDelete"),
+                b -> onDeletePressed())
+                .bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
         delete.setTooltip(Tooltip.create(Component.literal(
-                "Remove this route for good. There is no undo.")));
+                "Remove this route for good. Asks once before it does.")));
 
         // Footer.
         int footerY = Chrome.footerY(height);
@@ -138,7 +152,15 @@ public class RoutesScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        updateButtons();
+        if (broken) {
+            broken = false;
+            Notifier.chat(
+                    "§cBirch Optimizer could not open that screen. "
+                            + "Your settings are unchanged; see /birch diag.");
+            onClose();
+            return;
+        }
+        Chrome.guard("screen", this::updateButtons);
     }
 
     /**
@@ -164,14 +186,72 @@ public class RoutesScreen extends Screen {
 
         export.active = any;
         copy.active = any;
+
+        // Selecting a different route cancels a question asked about the last.
+        if (armedFor != null && !armedFor.equals(shownName)) {
+            disarm();
+        }
         delete.active = any;
+        delete.setMessage(Component.literal(
+                deleteArmed() ? "§4§lDelete for good?" : "§cDelete"));
     }
 
+    /**
+     * Run an action on the selected route, if there is one.
+     *
+     * Guarded here rather than at each button, because every one of these ends
+     * up touching something that can fail — the disk, the clipboard, the saved
+     * library — and a screen is the one place in this mod where a throw used to
+     * reach the game.
+     */
     private void withSelection(java.util.function.Consumer<String> action) {
-        String name = list.selectedName();
-        if (name != null) {
-            action.accept(name);
+        Chrome.guard("routes", () -> {
+            String name = list.selectedName();
+            if (name != null) {
+                action.accept(name);
+            }
+        });
+    }
+
+    // ---- Deleting ----
+
+    /**
+     * Delete asks first.
+     *
+     * A route is minutes of walking a grove in the order you worked out, and
+     * the button that destroys it sat directly under four that do not, at the
+     * end of a column, where the mouse ends up. Its own tooltip said "there is
+     * no undo", which is a warning where a question was wanted. The first press
+     * arms it and says so; the second does it. Anything else — picking another
+     * route, leaving, or simply waiting — puts it back.
+     */
+    private void onDeletePressed() {
+        if (armedFor != null && armedFor.equals(list.selectedName())
+                && System.currentTimeMillis() < armedUntil) {
+            withSelection(name -> {
+                RouteLibrary.delete(name);
+                resetRoute();
+                Notifier.actionBar("§7Deleted " + name);
+                list.refresh(regenSeconds());
+            });
+            disarm();
+            return;
         }
+        armedFor = list.selectedName();
+        armedUntil = System.currentTimeMillis() + CONFIRM_WINDOW_MS;
+        updateButtons();
+    }
+
+    private void disarm() {
+        armedFor = null;
+        armedUntil = 0L;
+    }
+
+    /** Whether the delete button is currently asking rather than deleting. */
+    private boolean deleteArmed() {
+        return armedFor != null
+                && armedFor.equals(shownName)
+                && System.currentTimeMillis() < armedUntil;
     }
 
     // ---- Sharing ----

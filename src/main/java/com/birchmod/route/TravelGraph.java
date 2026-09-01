@@ -1,9 +1,5 @@
 package com.birchmod.route;
 
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -13,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.birchmod.util.SafeFile;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -380,21 +377,20 @@ public final class TravelGraph {
     public static synchronized void load() {
         Path file = path();
         try {
-            if (!Files.exists(file)) {
+            String json = SafeFile.read(file, TravelGraph::parses);
+            if (json == null) {
                 return;
             }
-            try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                Store loaded = GSON.fromJson(reader, Store.class);
-                if (loaded != null) {
-                    store = loaded;
-                    if (store.nodes == null) {
-                        store.nodes = new LinkedHashMap<>();
-                    }
-                    if (store.legs == null) {
-                        store.legs = new LinkedHashMap<>();
-                    }
-                    sanitise();
+            Store loaded = GSON.fromJson(json, Store.class);
+            if (loaded != null) {
+                store = loaded;
+                if (store.nodes == null) {
+                    store.nodes = new LinkedHashMap<>();
                 }
+                if (store.legs == null) {
+                    store.legs = new LinkedHashMap<>();
+                }
+                sanitise();
             }
         } catch (Exception e) {
             store = new Store();
@@ -467,13 +463,18 @@ public final class TravelGraph {
 
     private static void write(String json) {
         try {
-            Path file = path();
-            Files.createDirectories(file.getParent());
-            try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                writer.write(json);
-            }
+            SafeFile.write(path(), json);
         } catch (Exception ignored) {
             // Losing telemetry is not worth crashing the client over.
+        }
+    }
+
+    /** Whether this text is measurements we could actually load. */
+    private static boolean parses(String json) {
+        try {
+            return GSON.fromJson(json, Store.class) != null;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

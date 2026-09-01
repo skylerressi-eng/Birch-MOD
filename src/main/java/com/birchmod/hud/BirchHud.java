@@ -71,6 +71,47 @@ public class BirchHud implements HudElement {
     private record Line(String text, int color) {
     }
 
+    /**
+     * How often the rows are rebuilt, regardless of frame rate.
+     *
+     * Ten times a second is faster than any of these numbers move and faster
+     * than an eye can follow, so nothing on screen is any less live than it was.
+     */
+    private static final long REBUILD_INTERVAL_MS = 100L;
+
+    /**
+     * The rows as last built, reused between rebuilds.
+     *
+     * Building them means a fresh list, a dozen boxed records and a dozen
+     * formatted strings, and it was happening on every single frame — hundreds
+     * of times a second, to display a birch rate that updates four times a
+     * second and a Bazaar price that updates every ten minutes. Everything else
+     * in this mod goes out of its way to avoid allocating on a hot path; the
+     * overlay was quietly doing more of it than anything else.
+     */
+    private List<Line> cached = List.of();
+    private long builtAt = 0L;
+    private int builtWidth = 0;
+
+    private List<Line> rows(BirchConfig config, Minecraft client) {
+        long now = System.currentTimeMillis();
+        if (now - builtAt < REBUILD_INTERVAL_MS) {
+            return cached;
+        }
+        builtAt = now;
+        cached = buildLines(config);
+
+        // The backdrop is sized from the widest row, which is a font
+        // measurement per row per frame on top of the building. It can only
+        // change when the rows do.
+        int width = client.font.width("Birch Optimizer");
+        for (Line line : cached) {
+            width = Math.max(width, client.font.width(line.text()));
+        }
+        builtWidth = width;
+        return cached;
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
         BirchConfig config = BirchConfig.get();
@@ -86,7 +127,7 @@ public class BirchHud implements HudElement {
             return;
         }
 
-        List<Line> lines = buildLines(config);
+        List<Line> lines = rows(config, client);
         if (lines.isEmpty()) {
             return;
         }
@@ -101,13 +142,9 @@ public class BirchHud implements HudElement {
         }
 
         if (config.hudBackground) {
-            int width = 0;
-            for (Line line : lines) {
-                width = Math.max(width, client.font.width(line.text()));
-            }
-            width = Math.max(width, client.font.width("Birch Optimizer"));
             int height = lineHeight * (lines.size() + 1);
-            graphics.fill(-PADDING, -PADDING, width + PADDING, height + PADDING, COLOR_BACKDROP);
+            graphics.fill(-PADDING, -PADDING, builtWidth + PADDING, height + PADDING,
+                    COLOR_BACKDROP);
         }
 
         int y = 0;

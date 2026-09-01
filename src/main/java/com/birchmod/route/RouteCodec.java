@@ -64,6 +64,8 @@ public final class RouteCodec {
 
     /** Why an import was refused, in words the player can act on. */
     public static final class CodecException extends Exception {
+        private static final long serialVersionUID = 1L;
+
         public CodecException(String message) {
             super(message);
         }
