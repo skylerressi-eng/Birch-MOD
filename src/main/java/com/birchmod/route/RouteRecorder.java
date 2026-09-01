@@ -21,10 +21,14 @@ public final class RouteRecorder {
     private String name = null;
     private RecordedRoute recording = null;
 
+    /** So the "recording is full" notice is given once, not on every swing. */
+    private boolean capReported = false;
+
     /** Begin a new recording, discarding any in progress. */
     public synchronized void start(String routeName) {
         this.name = routeName;
         this.recording = new RecordedRoute(routeName);
+        this.capReported = false;
     }
 
     public synchronized boolean isRecording() {
@@ -46,9 +50,24 @@ public final class RouteRecorder {
     public void onTreeChopped(BlockPos base) {
         String routeName;
         int count;
+        boolean justFilled = false;
 
         synchronized (this) {
             if (recording == null || base == null) {
+                return;
+            }
+            // A loop this long is a recording somebody forgot to stop. Left
+            // unbounded it grows until scoring it walks thousands of legs on
+            // the client thread every time the route list is drawn — and,
+            // worse, it encodes into a share code past what any import will
+            // accept, so it silently becomes unshareable.
+            if (recording.size() >= RouteCodec.MAX_POINTS) {
+                if (!capReported) {
+                    capReported = true;
+                    Notifier.chat("§eRecording has reached " + RouteCodec.MAX_POINTS
+                            + " stops and will not grow further. §7Run §f/route stop§7 "
+                            + "to save it.");
+                }
                 return;
             }
             // A tree belongs on a loop once. Only the previous point was
@@ -78,6 +97,7 @@ public final class RouteRecorder {
             finished = recording;
             recording = null;
             name = null;
+            capReported = false;
         }
 
         if (finished == null || finished.size() < RouteLibrary.MIN_STOPS) {
@@ -94,5 +114,6 @@ public final class RouteRecorder {
     public synchronized void cancel() {
         recording = null;
         name = null;
+        capReported = false;
     }
 }

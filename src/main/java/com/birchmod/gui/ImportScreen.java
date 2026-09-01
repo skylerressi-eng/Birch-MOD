@@ -32,6 +32,12 @@ public class ImportScreen extends Screen {
 
     private static final int BUTTON_HEIGHT = 20;
 
+    /** Room the section heading takes at the top of the panel. */
+    private static final int HEADING_HEIGHT = 16;
+
+    /** Room the "files live in…" line takes at the bottom of the panel. */
+    private static final int FOLDER_LINE_HEIGHT = 14;
+
     private final Screen parent;
     private SourceList list;
     private Button importButton;
@@ -55,11 +61,13 @@ public class ImportScreen extends Screen {
     }
 
     private void buildScreen() {
-        int top = Chrome.CONTENT_TOP;
-        int bottom = Chrome.contentBottom(height);
+        // Below the heading, and clear of the folder line under it.
+        int top = Chrome.CONTENT_TOP + HEADING_HEIGHT;
+        int bottom = Chrome.contentBottom(height) - FOLDER_LINE_HEIGHT;
         int listWidth = width - Chrome.MARGIN * 2;
 
-        list = new SourceList(minecraft, listWidth, bottom - top, Chrome.MARGIN, top);
+        list = new SourceList(minecraft, listWidth, Math.max(24, bottom - top),
+                Chrome.MARGIN, top);
         list.reload();
         addRenderableWidget(list);
 
@@ -134,13 +142,15 @@ public class ImportScreen extends Screen {
         Chrome.background(graphics, font, width, height, 4);
         super.extractRenderState(graphics, mouseX, mouseY, partial);
 
-        String heading = "Import a route";
-        graphics.text(font, "§f§l" + heading, (width - font.width(heading)) / 2,
-                Chrome.CONTENT_TOP - 18, Chrome.TEXT, false);
+        // Inside the panel, not above it: the strip above the panel belongs to
+        // the tabs, and a heading drawn there landed on top of them.
+        Chrome.section(graphics, font, "Import a route",
+                Chrome.MARGIN, Chrome.CONTENT_TOP, width - Chrome.MARGIN);
 
-        String folder = "§8Files live in " + RouteFiles.directory();
-        graphics.text(font, folder, Chrome.MARGIN, Chrome.contentBottom(height) + 4,
-                Chrome.TEXT_DIM, false);
+        // Under the list rather than in the footer, where the buttons are.
+        graphics.text(font, "§8Files live in " + RouteFiles.directory(),
+                Chrome.MARGIN, Chrome.contentBottom(height) - FOLDER_LINE_HEIGHT + 2,
+                Chrome.TEXT_FAINT, false);
     }
 
     @Override

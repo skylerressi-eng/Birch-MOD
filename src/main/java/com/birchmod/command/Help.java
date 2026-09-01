@@ -74,7 +74,7 @@ final class Help {
         line(source, "§6§lBirch Optimizer §7— general commands");
 
         header(source, "Where you stand");
-        entry(source, "/birch gui", "every setting on one screen");
+        entry(source, "/birch gui", "every setting on one screen, with a search box");
         entry(source, "/birch", "birch/hour, prices, session totals and rank");
         entry(source, "/birch stats", "the full breakdown, session and lifetime");
         entry(source, "/birch bazaar", "live prices and spreads across birch products");
@@ -101,8 +101,11 @@ final class Help {
 
         header(source, "Prices and rank");
         entry(source, "/birch tax <true|false>", "subtract Bazaar tax from coin projections");
-        entry(source, "/birch apikey <key>", "your Hypixel API key, for rank lookups");
+        entry(source, "/birch rank", "where a rank can come from, and what each says now");
+        entry(source, "/birch apikey <key>", "your Hypixel API key, checked as soon as you set it");
         entry(source, "/birch name <username>", "which account to look up");
+        note(source, "Your birch rank is read off the collection leaderboard when you "
+                + "open it, and needs no key. The key is only for Hypixel's own boards.");
 
         header(source, "When something looks wrong");
         entry(source, "/birch rate", "the working behind birch/hr, when it looks wrong");

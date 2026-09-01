@@ -160,18 +160,37 @@ public final class BirchCommand {
                 // /birch apikey <key> and /birch name <username>
                 .then(ClientCommands.literal("apikey")
                         .then(ClientCommands.argument("key", StringArgumentType.string()).executes(ctx -> {
-                            BirchConfig.get().hypixelApiKey = StringArgumentType.getString(ctx, "key");
+                            String key = StringArgumentType.getString(ctx, "key").trim();
+                            BirchConfig.get().hypixelApiKey = key;
                             BirchConfig.save();
-                            feedback(ctx.getSource(), "§aAPI key saved §7— rank refreshes within 10 minutes.");
+                            if (!LeaderboardManager.looksLikeKey(key)) {
+                                feedback(ctx.getSource(), "§eSaved, but that does not look like a "
+                                        + "Hypixel key. §7They look like "
+                                        + "§f0a1b2c3d-4e5f-6789-abcd-ef0123456789§7.");
+                                feedback(ctx.getSource(), "§8Run §f/api new§8 on Hypixel to get one.");
+                            } else {
+                                feedback(ctx.getSource(), "§aAPI key saved. §7Checking now…");
+                            }
+                            leaderboard.refreshNow();
                             return 1;
                         })))
                 .then(ClientCommands.literal("name")
                         .then(ClientCommands.argument("username", StringArgumentType.string()).executes(ctx -> {
-                            BirchConfig.get().playerName = StringArgumentType.getString(ctx, "username");
+                            BirchConfig.get().playerName =
+                                    StringArgumentType.getString(ctx, "username").trim();
                             BirchConfig.save();
-                            feedback(ctx.getSource(), "§aUsername saved §7— rank refreshes within 10 minutes.");
+                            feedback(ctx.getSource(), "§aUsername saved. §7Checking now…");
+                            // Ask straight away rather than leaving it to the
+                            // ten-minute timer, which is why entering a name
+                            // used to look like it did nothing at all.
+                            leaderboard.refreshNow();
                             return 1;
                         })))
+                // /birch rank — what the lookup is doing, and what it can know
+                .then(ClientCommands.literal("rank").executes(ctx -> {
+                    rankStatus(ctx.getSource(), collectionRank, leaderboard);
+                    return 1;
+                }))
 
                 // /birch safemode <on|off> — disable all in-world rendering
                 .then(ClientCommands.literal("safemode")
@@ -330,6 +349,46 @@ public final class BirchCommand {
 
         long mins = bazaar.getMinutesSinceUpdate();
         feedback(source, "§8Updated " + (mins <= 0 ? "just now" : mins + "m ago") + ", refreshes every 10m.");
+    }
+
+    /**
+     * Where a rank can come from, and what each source currently says.
+     *
+     * There are two, they answer different questions, and conflating them is
+     * why "my rank does not show" was hard to act on. Hypixel's public API has
+     * leaderboards for its classic minigames and nothing for Skyblock
+     * foraging — no key will ever produce a birch rank from it. The birch rank
+     * is on the collection leaderboard inside the game, which the mod reads
+     * over your shoulder when you open it.
+     */
+    private static void rankStatus(FabricClientCommandSource source,
+                                   CollectionRankTracker collectionRank,
+                                   LeaderboardManager leaderboard) {
+        header(source);
+
+        feedback(source, "§e§lBirch collection rank");
+        if (collectionRank.hasRank()) {
+            String name = collectionRank.getCollectionName();
+            feedback(source, " §7You are §b#" + INT_FMT.format(collectionRank.getRank())
+                    + "§7" + (name == null || name.isEmpty() ? "" : " in " + name));
+        } else {
+            feedback(source, " §7Not read yet.");
+            feedback(source, " §8Open the birch collection leaderboard in game and "
+                    + "this picks your place off it. No API key needed.");
+        }
+
+        feedback(source, "§e§lHypixel account rank");
+        BirchConfig config = BirchConfig.get();
+        String name = config.playerName;
+        String key = config.hypixelApiKey;
+        feedback(source, " §7Name: " + (name == null || name.isBlank()
+                ? "§cnot set §8(/birch name <username>)" : "§f" + name));
+        feedback(source, " §7Key: " + (key == null || key.isBlank()
+                ? "§cnot set §8(/birch apikey <key>)"
+                : LeaderboardManager.looksLikeKey(key) ? "§aset" : "§cdoes not look like a key"));
+        feedback(source, " §7Status: §f" + leaderboard.getStatus());
+        feedback(source, " §8These are Hypixel's classic minigame boards. Skyblock "
+                + "foraging is not on them, so this stays blank for most foragers.");
     }
 
     /**

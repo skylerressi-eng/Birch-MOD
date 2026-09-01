@@ -30,6 +30,20 @@ public class RoutesScreen extends Screen {
     private static final int BUTTON_HEIGHT = 20;
     private static final int BUTTON_GAP = 3;
 
+    /** Buttons in the detail column, for working out whether they fit. */
+    private static final int BUTTONS = 5;
+
+    /** Height the stats block needs before it is worth showing at all. */
+    private static final int STATS_HEIGHT = 62;
+
+    /** Nothing readable is left below this, so it is the floor. */
+    private static final int MIN_BUTTON_HEIGHT = 13;
+
+    /** Row pitch, button height and whether the stats fit — all from the window. */
+    private int pitch = BUTTON_HEIGHT + BUTTON_GAP;
+    private int buttonHeight = BUTTON_HEIGHT;
+    private boolean showStats = true;
+
     private final Screen parent;
 
     private RouteListWidget list;
@@ -84,7 +98,24 @@ public class RoutesScreen extends Screen {
         list.refresh(regenSeconds());
         addRenderableWidget(list);
 
-        int y = top + 34;
+        // Fit the column to the window rather than assuming it is tall. Five
+        // buttons at a fixed pitch ran straight past the bottom of the panel
+        // in a short window, which is the first thing anybody sees at a large
+        // GUI scale.
+        int buttonsTop = top + 26;
+        int room = Chrome.contentBottom(height) - 12 - buttonsTop;
+        showStats = room >= BUTTONS * (BUTTON_HEIGHT + BUTTON_GAP) + STATS_HEIGHT;
+        if (showStats) {
+            room -= STATS_HEIGHT;
+        }
+        // Spacing alone is not enough to make five buttons fit a short window:
+        // below a certain height the buttons themselves have to be shorter, or
+        // the last one is drawn through the footer.
+        pitch = Math.max(MIN_BUTTON_HEIGHT + 1,
+                Math.min(BUTTON_HEIGHT + BUTTON_GAP, room / BUTTONS));
+        buttonHeight = Math.max(MIN_BUTTON_HEIGHT, Math.min(BUTTON_HEIGHT, pitch - 1));
+
+        int y = buttonsTop;
         follow = addRenderableWidget(Button.builder(Component.literal("Follow"), b -> {
             withSelection(name -> {
                 RouteLibrary.setActive(name);
@@ -92,11 +123,11 @@ public class RoutesScreen extends Screen {
                 Notifier.actionBar("§aFollowing " + name);
                 list.refresh(regenSeconds());
             });
-        }).bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
+        }).bounds(detailX, y, detailWidth, buttonHeight).build());
         follow.setTooltip(Tooltip.create(Component.literal(
                 "Start following this route now.")));
 
-        y += BUTTON_HEIGHT + BUTTON_GAP;
+        y += pitch;
         makeDefault = addRenderableWidget(Button.builder(Component.literal("Make default"), b -> {
             withSelection(name -> {
                 RouteLibrary.setDefault(name);
@@ -104,29 +135,29 @@ public class RoutesScreen extends Screen {
                 Notifier.actionBar("§6" + name + " is your default");
                 list.refresh(regenSeconds());
             });
-        }).bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
+        }).bounds(detailX, y, detailWidth, buttonHeight).build());
         makeDefault.setTooltip(Tooltip.create(Component.literal(
                 "Come back to this route on every login, whatever you were "
                         + "following when you left.")));
 
-        y += BUTTON_HEIGHT + BUTTON_GAP;
+        y += pitch;
         export = addRenderableWidget(Button.builder(Component.literal("Export to file"),
                 b -> withSelection(this::exportToFile))
-                .bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
+                .bounds(detailX, y, detailWidth, buttonHeight).build());
         export.setTooltip(Tooltip.create(Component.literal(
                 "Save this route as a file you can send to somebody.")));
 
-        y += BUTTON_HEIGHT + BUTTON_GAP;
+        y += pitch;
         copy = addRenderableWidget(Button.builder(Component.literal("Copy code"),
                 b -> withSelection(this::copyCode))
-                .bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
+                .bounds(detailX, y, detailWidth, buttonHeight).build());
         copy.setTooltip(Tooltip.create(Component.literal(
                 "Put a share code on the clipboard, to paste straight into a chat.")));
 
-        y += BUTTON_HEIGHT + BUTTON_GAP;
+        y += pitch;
         delete = addRenderableWidget(Button.builder(Component.literal("§cDelete"),
                 b -> onDeletePressed())
-                .bounds(detailX, y, detailWidth, BUTTON_HEIGHT).build());
+                .bounds(detailX, y, detailWidth, buttonHeight).build());
         delete.setTooltip(Tooltip.create(Component.literal(
                 "Remove this route for good. Asks once before it does.")));
 
@@ -296,15 +327,22 @@ public class RoutesScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partial) {
         Chrome.background(graphics, font, width, height, TAB_INDEX);
-        super.extractRenderState(graphics, mouseX, mouseY, partial);
 
         int listWidth = Math.max(120, (width - Chrome.MARGIN * 2) * 45 / 100);
         int detailX = Chrome.MARGIN + listWidth + 10;
-        int y = Chrome.CONTENT_TOP + 4;
+        int detailRight = width - Chrome.MARGIN;
+
+        // The pane sits in a card, so the buttons read as belonging to the
+        // route named above them rather than floating beside a list.
+        Chrome.card(graphics, detailX - 6, Chrome.CONTENT_TOP - 4,
+                detailRight, Chrome.contentBottom(height) - 4);
+
+        super.extractRenderState(graphics, mouseX, mouseY, partial);
+
+        int y = Chrome.CONTENT_TOP + 2;
 
         if (shownName == null) {
-            graphics.text(font, "§7No routes saved yet.", detailX, y, Chrome.TEXT_DIM, false);
-            graphics.text(font, "§8/route start <name>", detailX, y + 12, Chrome.TEXT_DIM, false);
+            emptyPane(graphics, detailX, y, detailRight);
             return;
         }
 
@@ -312,23 +350,61 @@ public class RoutesScreen extends Screen {
         if (route == null) {
             return;
         }
+
+        graphics.text(font, "§f§l" + route.name, detailX, y, Chrome.TEXT, false);
+
+        // Badges say what this route already is, so the buttons below do not
+        // have to carry that as well.
+        String badges = "";
+        if (route.name.equalsIgnoreCase(RouteLibrary.getActiveName())) {
+            badges += "§a▶ following  ";
+        }
+        if (route.name.equalsIgnoreCase(RouteLibrary.getDefaultName())) {
+            badges += "§6★ default";
+        }
+        graphics.text(font, badges.isEmpty() ? "§8" + route.size() + " stops" : badges,
+                detailX, y + 11, Chrome.TEXT_DIM, false);
+
+        if (showStats) {
+            statsCard(graphics, route, detailX, detailRight);
+        }
+    }
+
+    /** What the plan expects of this route, as labelled rows. */
+    private void statsCard(GuiGraphicsExtractor graphics, RecordedRoute route,
+                           int left, int right) {
         RouteLibrary.Score score = RouteLibrary.score(route, regenSeconds());
 
-        graphics.text(font, "§f§l" + route.name, detailX, y, Chrome.TEXT, true);
+        int bottom = Chrome.contentBottom(height) - 10;
+        int top = bottom - 46;
+        Chrome.rule(graphics, left, right - 6, top - 6);
 
-        String best = route.bestLapSeconds > 0.0
-                ? "Best lap " + LapTracker.format(route.bestLapSeconds)
-                : "Never lapped";
-        graphics.text(font, "§7" + route.size() + " stops · §a" + best,
-                detailX, y + 12, Chrome.TEXT_DIM, false);
+        row(graphics, left, right, top, "Stops", String.valueOf(route.size()), Chrome.TEXT);
+        row(graphics, left, right, top + 12, "Best lap",
+                route.bestLapSeconds > 0.0 ? LapTracker.format(route.bestLapSeconds) : "never lapped",
+                route.bestLapSeconds > 0.0 ? Chrome.TEXT_GREEN : Chrome.TEXT_FAINT);
+        row(graphics, left, right, top + 24, "Predicted lap",
+                LapTracker.format(score.lapSeconds()), Chrome.TEXT_DIM);
+        row(graphics, left, right, top + 36, "Trees/min",
+                String.format("%.1f", score.treesPerMinute()), Chrome.TEXT_GOLD);
+    }
 
-        // Below the buttons: what the plan expects of this route.
-        int notesY = Chrome.contentBottom(height) - 26;
-        graphics.text(font, String.format("§8Predicted %.1f trees/min", score.treesPerMinute()),
-                detailX, notesY, Chrome.TEXT_DIM, false);
-        graphics.text(font, String.format("§8Lap %s of walking",
-                        LapTracker.format(score.lapSeconds())),
-                detailX, notesY + 11, Chrome.TEXT_DIM, false);
+    /** A label on the left, its value flush right. */
+    private void row(GuiGraphicsExtractor graphics, int left, int right, int y,
+                     String label, String value, int colour) {
+        graphics.text(font, label, left, y, Chrome.TEXT_FAINT, false);
+        graphics.text(font, value, right - 6 - font.width(value), y, colour, false);
+    }
+
+    /** Nothing selected, because there is nothing to select. */
+    private void emptyPane(GuiGraphicsExtractor graphics, int x, int y, int right) {
+        graphics.text(font, "§fNo routes yet", x, y, Chrome.TEXT, false);
+        graphics.textWithWordWrap(font, Component.literal(
+                        "§7Record one by chopping the trees you want, in the order you want them."),
+                x, y + 14, right - x - 6, Chrome.TEXT_DIM);
+        graphics.text(font, "§8/route start <name>", x, y + 46, Chrome.TEXT_FAINT, false);
+        graphics.text(font, "§8/route stop", x, y + 57, Chrome.TEXT_FAINT, false);
+        graphics.text(font, "§7…or Import a route below.", x, y + 73, Chrome.TEXT_DIM, false);
     }
 
     @Override

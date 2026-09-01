@@ -2,11 +2,8 @@ package com.birchmod.gui;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 import com.birchmod.config.BirchConfig;
-
-import net.minecraft.client.gui.components.AbstractWidget;
 
 /** When the mod is allowed to say something. */
 final class AlertsTab implements BirchScreen.Tab {
@@ -17,9 +14,9 @@ final class AlertsTab implements BirchScreen.Tab {
     }
 
     @Override
-    public List<Supplier<AbstractWidget>> controls(BirchScreen screen) {
+    public List<BirchScreen.Item> controls(BirchScreen screen) {
         BirchConfig c = BirchConfig.get();
-        List<Supplier<AbstractWidget>> controls = new ArrayList<>();
+        List<BirchScreen.Item> controls = new ArrayList<>();
 
         controls.add(BirchScreen.toggle("Tree ready", "Say something when trees come back.",
                 () -> c.notifyOnReady, v -> c.notifyOnReady = v));

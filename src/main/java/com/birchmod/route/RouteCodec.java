@@ -42,8 +42,15 @@ public final class RouteCodec {
     /** Most JSON allowed out of the decompressor, so a zip bomb cannot land. */
     private static final int MAX_DECOMPRESSED_BYTES = 512 * 1024;
 
-    /** Stops allowed in an imported route. */
-    private static final int MAX_POINTS = 512;
+    /**
+     * Stops one share code can carry.
+     *
+     * Also what the recorder will record, deliberately. When only the import
+     * side enforced this, a longer recording encoded without complaint into a
+     * code that nothing could ever read back — not the person you sent it to,
+     * and not you. A route the mod will make is a route the mod can carry.
+     */
+    public static final int MAX_POINTS = 512;
 
     /** Minecraft's own limits, so an import cannot plant a stop outside a world. */
     private static final int MAX_HORIZONTAL = 30_000_000;

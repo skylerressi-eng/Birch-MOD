@@ -142,10 +142,13 @@ public class BirchMod implements ClientModInitializer {
             Guard.run("keybinds", () -> Keybinds.tick(client, BirchMod::resetSession));
         });
 
-        // Persist lifetime totals and travel measurements on a clean exit.
+        // Persist on a clean exit. All three are written off the client thread
+        // while playing, so the last of each has to be flushed here — a queued
+        // write on a daemon thread does not survive the process stopping.
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             SessionStats.save();
             TravelGraph.persistNow();
+            RouteLibrary.persistNow();
         });
 
         BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, leaderboard, routeBuilder);

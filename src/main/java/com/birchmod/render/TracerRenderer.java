@@ -144,17 +144,10 @@ public class TracerRenderer {
             return;
         }
 
-        // The tree to chop, and the one after it. Two stops is the whole point:
-        // one box says what to mine, and one blue line says where you are going
-        // when it is down. Drawing only the current tree leaves nothing
-        // pointing onward, and drawing the whole loop fills a dense grove with
-        // lines to trees you are not going to next. The planner still looks
-        // further ahead than this; that lookahead is what lets a stop still
-        // regrowing be stepped over, and it is separate from what gets drawn.
-        // Everything the builder produced. How many that is — /route length, or
-        // the whole loop with /route path — is decided in one place, and it is
-        // not here. Deciding it twice is what made turning the length up change
-        // nothing you could see.
+        // Everything the builder produced. How many that is — /route length,
+        // or the whole loop with /route path — is decided in one place, and it
+        // is not here. Deciding it twice is what made turning the length up
+        // plan further ahead and change nothing you could see.
         List<Stop> route = planned;
 
         Camera camera = client.gameRenderer.getMainCamera();

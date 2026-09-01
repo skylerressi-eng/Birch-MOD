@@ -2,11 +2,8 @@ package com.birchmod.gui;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 import com.birchmod.config.BirchConfig;
-
-import net.minecraft.client.gui.components.AbstractWidget;
 
 /** The HUD: whether it is there, how big, and which rows it carries. */
 final class OverlayTab implements BirchScreen.Tab {
@@ -17,9 +14,9 @@ final class OverlayTab implements BirchScreen.Tab {
     }
 
     @Override
-    public List<Supplier<AbstractWidget>> controls(BirchScreen screen) {
+    public List<BirchScreen.Item> controls(BirchScreen screen) {
         BirchConfig c = BirchConfig.get();
-        List<Supplier<AbstractWidget>> controls = new ArrayList<>();
+        List<BirchScreen.Item> controls = new ArrayList<>();
 
         controls.add(BirchScreen.toggle("HUD", "The overlay as a whole.",
                 () -> c.hudEnabled, v -> c.hudEnabled = v));
@@ -35,8 +32,7 @@ final class OverlayTab implements BirchScreen.Tab {
         controls.add(BirchScreen.slider("Y", "Distance from the top edge.",
                 0, 400, 1, () -> c.hudY, v -> c.hudY = (int) v));
 
-        controls.add(BirchScreen.heading("Rows"));
-        controls.add(BirchScreen.heading(""));
+        controls.add(BirchScreen.section("Rows"));
 
         controls.add(BirchScreen.toggle("Birch/hour", "Measured from what reaches your inventory.",
                 () -> c.showBirchRate, v -> c.showBirchRate = v));

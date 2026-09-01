@@ -75,6 +75,14 @@ public final class RouteLibrary {
 
     private static Store store = new Store();
 
+    /** Routes are written off the client thread; nobody waits on the disk. */
+    private static final java.util.concurrent.ExecutorService IO =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "BirchOptimizer-Routes");
+                t.setDaemon(true);
+                return t;
+            });
+
     private RouteLibrary() {
     }
 
@@ -348,13 +356,40 @@ public final class RouteLibrary {
         }
     }
 
+    /**
+     * Save the library, off the client thread.
+     *
+     * Serialising and writing is not much work, but the write now forces the
+     * file to disk before swapping it in — which is the point of it, and which
+     * on a slow or busy disk takes long enough to be felt. This is called
+     * whenever a route is saved, renamed, followed or deleted, and every time
+     * you beat your best lap, and that last one lands in the middle of play.
+     * Nobody is waiting on the answer, so nobody should be waiting on the disk.
+     */
     public static void persist() {
+        try {
+            String json = GSON.toJson(store);
+            IO.execute(() -> SafeFile.write(path(), json));
+        } catch (Exception ignored) {
+            // Losing a route is not worth crashing the client over — and the
+            // save never empties the real file, so a failure here leaves the
+            // routes you already had exactly where they were.
+        }
+    }
+
+    /**
+     * Save now, and wait for it.
+     *
+     * Only for shutdown, where the process is about to stop and a queued write
+     * would never run. The writer thread is a daemon, which is what keeps a
+     * stuck disk from holding the game open — and is also why the last save
+     * needs to happen here rather than being left to it.
+     */
+    public static void persistNow() {
         try {
             SafeFile.write(path(), GSON.toJson(store));
         } catch (Exception ignored) {
-            // Losing a route is not worth crashing the client over — and the
-            // save above never empties the real file, so a failure here leaves
-            // the routes you already had exactly where they were.
+            // Nothing useful left to do while the game is closing.
         }
     }
 }

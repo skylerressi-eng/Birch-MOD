@@ -2,12 +2,9 @@ package com.birchmod.gui;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 import com.birchmod.BirchMod;
 import com.birchmod.config.BirchConfig;
-
-import net.minecraft.client.gui.components.AbstractWidget;
 
 /** What the route draws, and how closely it follows what you recorded. */
 final class RouteTab implements BirchScreen.Tab {
@@ -18,9 +15,9 @@ final class RouteTab implements BirchScreen.Tab {
     }
 
     @Override
-    public List<Supplier<AbstractWidget>> controls(BirchScreen screen) {
+    public List<BirchScreen.Item> controls(BirchScreen screen) {
         BirchConfig c = BirchConfig.get();
-        List<Supplier<AbstractWidget>> controls = new ArrayList<>();
+        List<BirchScreen.Item> controls = new ArrayList<>();
 
         controls.add(BirchScreen.toggle("Overlay", "Boxes and lines in the world.",
                 () -> c.routeEnabled, v -> c.routeEnabled = v));
@@ -43,8 +40,7 @@ final class RouteTab implements BirchScreen.Tab {
         controls.add(BirchScreen.slider("Line width", "Thickness of boxes and lines.",
                 0.5, 10.0, 0.5, () -> c.lineWidth, v -> c.lineWidth = v));
 
-        controls.add(BirchScreen.heading("Following"));
-        controls.add(BirchScreen.heading(""));
+        controls.add(BirchScreen.section("Following"));
 
         controls.add(BirchScreen.toggle("Strict order",
                 "On: exactly the order you recorded. Off: a cleared stop hands "
