@@ -48,9 +48,13 @@ final class OverlayTab implements BirchScreen.Tab {
                 () -> c.showLap, v -> c.showLap = v));
         controls.add(BirchScreen.toggle("Session", "Birch, trees and coins this session.",
                 () -> c.showSession, v -> c.showSession = v));
-        controls.add(BirchScreen.toggle("Collection", "Your collection rank, read from the menu.",
+        controls.add(BirchScreen.toggle("Collection rank",
+                "Your place on the birch collection leaderboard, read off it when "
+                        + "you open it in game. Needs no API key.",
                 () -> c.showCollectionRank, v -> c.showCollectionRank = v));
-        controls.add(BirchScreen.toggle("Leaderboard", "Your rank, fetched with your API key.",
+        controls.add(BirchScreen.toggle("Birch total",
+                "Lifetime birch on the profile you are playing, fetched with your "
+                        + "API key. Set one with /birch apikey and /birch name.",
                 () -> c.showLeaderboard, v -> c.showLeaderboard = v));
 
         return controls;

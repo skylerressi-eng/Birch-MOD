@@ -1,7 +1,7 @@
 package com.birchmod;
 
 import com.birchmod.api.BazaarManager;
-import com.birchmod.api.LeaderboardManager;
+import com.birchmod.api.CollectionApi;
 import com.birchmod.command.BirchCommand;
 import com.birchmod.command.RouteCommand;
 import com.birchmod.command.TimerCommand;
@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
  *  - Tax-aware Bazaar pricing across birch products, refreshed every 10 minutes.
  *  - Session and lifetime statistics, persisted between runs.
  *  - Per-tree regeneration timers floating above each downed tree, with alerts.
- *  - Collection leaderboard rank, captured when you open the leaderboard GUI.
+ *  - Birch collection total from the API, and your rank read from the game.
  *  - {@code /birch} and {@code /timer} commands plus rebindable keys.
  */
 public class BirchMod implements ClientModInitializer {
@@ -65,7 +65,7 @@ public class BirchMod implements ClientModInitializer {
     public static TreeRegenTracker regenTracker;
     public static CollectionRankTracker collectionRank;
     public static BazaarManager bazaar;
-    public static LeaderboardManager leaderboard;
+    public static CollectionApi collectionApi;
     public static RouteBuilder routeBuilder;
     public static RouteRecorder routeRecorder;
     public static MovementTracker movementTracker;
@@ -87,7 +87,7 @@ public class BirchMod implements ClientModInitializer {
         regenTracker = new TreeRegenTracker();
         collectionRank = new CollectionRankTracker();
         bazaar = new BazaarManager();
-        leaderboard = new LeaderboardManager();
+        collectionApi = new CollectionApi();
         routeBuilder = new RouteBuilder(regenTracker);
         routeRecorder = new RouteRecorder();
         movementTracker = new MovementTracker();
@@ -114,7 +114,7 @@ public class BirchMod implements ClientModInitializer {
 
         // Both API managers poll on their own 10-minute schedule.
         bazaar.start();
-        leaderboard.start();
+        collectionApi.start();
 
         Keybinds.register();
 
@@ -151,7 +151,7 @@ public class BirchMod implements ClientModInitializer {
             RouteLibrary.persistNow();
         });
 
-        BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, leaderboard, routeBuilder);
+        BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, collectionApi, routeBuilder);
         HudElementRegistry.attachElementBefore(
                 VanillaHudElements.CHAT,
                 Identifier.fromNamespaceAndPath(MOD_ID, "birch_overlay"),
@@ -174,7 +174,7 @@ public class BirchMod implements ClientModInitializer {
                 }));
 
         TimerCommand.register(regenTracker);
-        BirchCommand.register(tracker, regenTracker, collectionRank, bazaar, leaderboard);
+        BirchCommand.register(tracker, regenTracker, collectionRank, bazaar, collectionApi);
         RouteCommand.register(routeBuilder, routeRecorder, regenTracker);
     }
 

@@ -2,6 +2,7 @@ package com.birchmod.config;
 
 import java.nio.file.Path;
 
+import com.birchmod.api.BazaarManager;
 import com.birchmod.util.SafeFile;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -23,7 +24,7 @@ public final class BirchConfig {
      * Bumped when a default changes in a way an existing settings file would
      * otherwise override forever.
      */
-    private static final int CURRENT_VERSION = 3;
+    private static final int CURRENT_VERSION = 4;
 
     /** Upper bound on how many stops can be shown at once. */
     public static final int MAX_ROUTE_LENGTH = 32;
@@ -53,6 +54,14 @@ public final class BirchConfig {
     public boolean showRoute = true;
     public boolean showSession = true;
     public boolean showCollectionRank = true;
+    /**
+     * The lifetime birch total fetched with your API key.
+     *
+     * Named for what it used to show. It scanned Hypixel's classic minigame
+     * leaderboards, which carry nothing about Skyblock, so it never showed
+     * anything at all; the field keeps its name so that turning it off stays
+     * turned off across the change.
+     */
     public boolean showLeaderboard = true;
     /** Live lap timer against your best lap on the active route. */
     public boolean showLap = true;
@@ -60,8 +69,13 @@ public final class BirchConfig {
     // ---- Bazaar ----
     /** Show insta-buy price (true) or insta-sell price (false). */
     public boolean showBuyPrice = true;
-    /** Primary Hypixel Bazaar product id. "BIRCH_LOG" is Birch Wood. */
-    public String bazaarProductId = "BIRCH_LOG";
+    /**
+     * Primary Hypixel Bazaar product id. "LOG:2" is Birch Wood.
+     *
+     * Skyblock still names Bazaar products with pre-1.13 item ids, so the woods
+     * are one id with a data value after it rather than a name each.
+     */
+    public String bazaarProductId = BazaarManager.BIRCH_PRODUCT;
     /**
      * Apply Hypixel's Bazaar tax to coin projections. Skyblock takes a cut on
      * sell orders, so gross prices overstate real income.
@@ -204,6 +218,13 @@ public final class BirchConfig {
         if (configVersion < 2) {
             showFullPath = false;
         }
+        if (configVersion < 4 && "BIRCH_LOG".equals(bazaarProductId)) {
+            // There is no BIRCH_LOG on the Bazaar and there never was, so every
+            // price lookup missed and the row read "product not found". Anyone
+            // who has run this mod has that dead id saved to disk, where it
+            // would go on missing forever.
+            bazaarProductId = BazaarManager.BIRCH_PRODUCT;
+        }
         if (configVersion < 3) {
             // Two logs was a stand-in for "do not make clutter", and it cost
             // real birch to buy that: a pair of logs lying on the ground is
@@ -230,12 +251,18 @@ public final class BirchConfig {
         minTreeLogs = Math.max(1, Math.min(8, minTreeLogs));
         lineWidth = Math.max(0.5, Math.min(10.0, lineWidth));
         if (bazaarProductId == null || bazaarProductId.isBlank()) {
-            bazaarProductId = "BIRCH_LOG";
+            bazaarProductId = BazaarManager.BIRCH_PRODUCT;
         }
     }
 
     public static void save() {
         try {
+            // Bound the values on the way out as well as on the way in. Loading
+            // clamped and saving did not, so anything written between launches
+            // — by a slider, a command, or another mod holding a reference —
+            // went to disk unchecked and was only caught next time the game
+            // started.
+            instance.clamp();
             SafeFile.write(path(), GSON.toJson(instance));
         } catch (Exception ignored) {
             // Non-fatal: the mod still runs with in-memory settings.

@@ -4,7 +4,7 @@ import java.text.DecimalFormat;
 
 import com.birchmod.BirchMod;
 import com.birchmod.api.BazaarManager;
-import com.birchmod.api.LeaderboardManager;
+import com.birchmod.api.CollectionApi;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
@@ -41,9 +41,9 @@ public final class BirchCommand {
                                 TreeRegenTracker regenTracker,
                                 CollectionRankTracker collectionRank,
                                 BazaarManager bazaar,
-                                LeaderboardManager leaderboard) {
+                                CollectionApi collectionApi) {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, access) ->
-                build(dispatcher, tracker, regenTracker, collectionRank, bazaar, leaderboard));
+                build(dispatcher, tracker, regenTracker, collectionRank, bazaar, collectionApi));
     }
 
     private static void build(CommandDispatcher<FabricClientCommandSource> dispatcher,
@@ -51,7 +51,7 @@ public final class BirchCommand {
                               TreeRegenTracker regenTracker,
                               CollectionRankTracker collectionRank,
                               BazaarManager bazaar,
-                              LeaderboardManager leaderboard) {
+                              CollectionApi collectionApi) {
 
         dispatcher.register(ClientCommands.literal("birch")
                 // /birch — overview
@@ -163,7 +163,7 @@ public final class BirchCommand {
                             String key = StringArgumentType.getString(ctx, "key").trim();
                             BirchConfig.get().hypixelApiKey = key;
                             BirchConfig.save();
-                            if (!LeaderboardManager.looksLikeKey(key)) {
+                            if (!CollectionApi.looksLikeKey(key)) {
                                 feedback(ctx.getSource(), "§eSaved, but that does not look like a "
                                         + "Hypixel key. §7They look like "
                                         + "§f0a1b2c3d-4e5f-6789-abcd-ef0123456789§7.");
@@ -171,7 +171,7 @@ public final class BirchCommand {
                             } else {
                                 feedback(ctx.getSource(), "§aAPI key saved. §7Checking now…");
                             }
-                            leaderboard.refreshNow();
+                            collectionApi.refreshNow();
                             return 1;
                         })))
                 .then(ClientCommands.literal("name")
@@ -183,12 +183,12 @@ public final class BirchCommand {
                             // Ask straight away rather than leaving it to the
                             // ten-minute timer, which is why entering a name
                             // used to look like it did nothing at all.
-                            leaderboard.refreshNow();
+                            collectionApi.refreshNow();
                             return 1;
                         })))
                 // /birch rank — what the lookup is doing, and what it can know
                 .then(ClientCommands.literal("rank").executes(ctx -> {
-                    rankStatus(ctx.getSource(), collectionRank, leaderboard);
+                    rankStatus(ctx.getSource(), collectionRank, collectionApi);
                     return 1;
                 }))
 
@@ -329,12 +329,13 @@ public final class BirchCommand {
             return;
         }
 
-        for (String id : new String[]{"BIRCH_LOG", "ENCHANTED_BIRCH_LOG"}) {
+        for (String id : new String[]{
+                BazaarManager.BIRCH_PRODUCT, BazaarManager.ENCHANTED_BIRCH_PRODUCT}) {
             BazaarManager.Quote quote = bazaar.getQuote(id);
             if (quote == null) {
                 continue;
             }
-            feedback(source, "§f" + id);
+            feedback(source, "§f" + BazaarManager.friendlyName(id) + " §8" + id);
             feedback(source, "§7  Buy: §6" + DEC_FMT.format(quote.buyPrice())
                     + " §7Sell: §6" + DEC_FMT.format(quote.sellPrice())
                     + " §8(spread " + DEC_FMT.format(quote.spread() * 100.0) + "%)");
@@ -352,43 +353,78 @@ public final class BirchCommand {
     }
 
     /**
-     * Where a rank can come from, and what each source currently says.
+     * Everything about your birch standing, and which part comes from where.
      *
-     * There are two, they answer different questions, and conflating them is
+     * Two sources answering two different questions, and conflating them is
      * why "my rank does not show" was hard to act on. Hypixel's public API has
-     * leaderboards for its classic minigames and nothing for Skyblock
-     * foraging — no key will ever produce a birch rank from it. The birch rank
-     * is on the collection leaderboard inside the game, which the mod reads
-     * over your shoulder when you open it.
+     * no Skyblock collection leaderboard, so no key produces a rank from it —
+     * what a key does fetch is the lifetime total a rank would be computed
+     * from. The rank itself is on the collection leaderboard inside the game,
+     * which the mod reads over your shoulder and which needs no key.
      */
     private static void rankStatus(FabricClientCommandSource source,
                                    CollectionRankTracker collectionRank,
-                                   LeaderboardManager leaderboard) {
+                                   CollectionApi collectionApi) {
         header(source);
 
-        feedback(source, "§e§lBirch collection rank");
+        feedback(source, "§e§lYour rank §8— from the game");
         if (collectionRank.hasRank()) {
             String name = collectionRank.getCollectionName();
             feedback(source, " §7You are §b#" + INT_FMT.format(collectionRank.getRank())
                     + "§7" + (name == null || name.isEmpty() ? "" : " in " + name));
         } else {
             feedback(source, " §7Not read yet.");
-            feedback(source, " §8Open the birch collection leaderboard in game and "
-                    + "this picks your place off it. No API key needed.");
+            feedback(source, " §8Open the birch collection leaderboard in game and this "
+                    + "picks your place off it. No API key needed.");
+            feedback(source, " §8Hypixel publishes no Skyblock collection leaderboard, "
+                    + "so this is the only place a rank can come from.");
         }
 
-        feedback(source, "§e§lHypixel account rank");
+        feedback(source, "§e§lYour birch total §8— from the API");
         BirchConfig config = BirchConfig.get();
         String name = config.playerName;
         String key = config.hypixelApiKey;
+
         feedback(source, " §7Name: " + (name == null || name.isBlank()
-                ? "§cnot set §8(/birch name <username>)" : "§f" + name));
-        feedback(source, " §7Key: " + (key == null || key.isBlank()
-                ? "§cnot set §8(/birch apikey <key>)"
-                : LeaderboardManager.looksLikeKey(key) ? "§aset" : "§cdoes not look like a key"));
-        feedback(source, " §7Status: §f" + leaderboard.getStatus());
-        feedback(source, " §8These are Hypixel's classic minigame boards. Skyblock "
-                + "foraging is not on them, so this stays blank for most foragers.");
+                ? "§cnot set §8— /birch name <username>" : "§f" + name));
+        feedback(source, " §7Key:  " + (key == null || key.isBlank()
+                ? "§cnot set §8— /birch apikey <key>"
+                : CollectionApi.looksLikeKey(key) ? "§aset" : "§cdoes not look like a key"));
+
+        if (collectionApi.hasCollection()) {
+            String profile = collectionApi.getProfileName();
+            feedback(source, " §7Birch collected: §b"
+                    + INT_FMT.format(collectionApi.getBirchCollected())
+                    + (profile == null || profile.isEmpty() ? "" : " §8on " + profile));
+        } else {
+            feedback(source, " §7Status: §f" + collectionApi.getStatus());
+            explainStatus(source, collectionApi.getStatus());
+        }
+    }
+
+    /** Turn a status into the thing to go and do about it. */
+    private static void explainStatus(FabricClientCommandSource source, String status) {
+        if (status == null) {
+            return;
+        }
+        switch (status) {
+            case "collections not shared" -> {
+                feedback(source, " §8Skyblock is not sharing your collections. In game: "
+                        + "§fSkyblock Menu → Settings → API Settings → Collection§8.");
+                feedback(source, " §8Turn it on, then run §f/birch name <username>§8 again.");
+            }
+            case "API key rejected", "API key looks wrong" ->
+                    feedback(source, " §8Run §f/api new§8 on Hypixel for a fresh key.");
+            case "no such player" ->
+                    feedback(source, " §8Check the spelling of your Minecraft username.");
+            case "no Skyblock profile" ->
+                    feedback(source, " §8That account has never played Skyblock.");
+            case "no connection" ->
+                    feedback(source, " §8Could not reach Mojang or Hypixel at all.");
+            default -> {
+                // Nothing useful to add; the status already says it.
+            }
+        }
     }
 
     /**

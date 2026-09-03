@@ -99,13 +99,15 @@ final class Help {
         entry(source, "/timer mode", "floating countdowns above regrowing trees");
         entry(source, "/timer reset", "forget the measurements and calibrate again");
 
-        header(source, "Prices and rank");
+        header(source, "Prices, rank and totals");
         entry(source, "/birch tax <true|false>", "subtract Bazaar tax from coin projections");
-        entry(source, "/birch rank", "where a rank can come from, and what each says now");
-        entry(source, "/birch apikey <key>", "your Hypixel API key, checked as soon as you set it");
+        entry(source, "/birch rank", "your rank and your birch total, and where each comes from");
+        entry(source, "/birch apikey <key>", "your Hypixel API key, checked the moment you set it");
         entry(source, "/birch name <username>", "which account to look up");
-        note(source, "Your birch rank is read off the collection leaderboard when you "
-                + "open it, and needs no key. The key is only for Hypixel's own boards.");
+        note(source, "Your rank is read off the collection leaderboard when you open it "
+                + "in game, and needs no key.");
+        note(source, "The key fetches your lifetime birch total instead — Hypixel "
+                + "publishes no Skyblock collection leaderboard to rank you on.");
 
         header(source, "When something looks wrong");
         entry(source, "/birch rate", "the working behind birch/hr, when it looks wrong");

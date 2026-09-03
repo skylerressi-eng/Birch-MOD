@@ -21,13 +21,28 @@ import com.google.gson.JsonParser;
  */
 public class BazaarManager {
 
-    private static final String BAZAAR_URL = "https://api.hypixel.net/skyblock/bazaar";
+    private static final String BAZAAR_URL = "https://api.hypixel.net/v2/skyblock/bazaar";
     private static final long REFRESH_MINUTES = 10L;
+
+    /**
+     * Raw birch wood, as the Bazaar actually names it.
+     *
+     * Not {@code BIRCH_LOG}, which is what this asked for and which does not
+     * exist — the Bazaar has no such product, so every lookup missed, the price
+     * row read "product not found" forever, and coins per hour was left working
+     * off enchanted birch alone. Skyblock still uses pre-1.13 item ids here, so
+     * the woods are one id with a data value after it: {@code LOG} is oak,
+     * {@code LOG:1} spruce, {@code LOG:2} birch.
+     */
+    public static final String BIRCH_PRODUCT = "LOG:2";
+
+    /** Enchanted birch, and how many raw logs go into one. */
+    public static final String ENCHANTED_BIRCH_PRODUCT = "ENCHANTED_BIRCH_LOG";
 
     /** Products worth pricing, mapped to how many birch logs one unit is worth. */
     private static final Map<String, Double> RELATED_PRODUCTS = Map.of(
-            "BIRCH_LOG", 1.0,
-            "ENCHANTED_BIRCH_LOG", 160.0);
+            BIRCH_PRODUCT, 1.0,
+            ENCHANTED_BIRCH_PRODUCT, 160.0);
 
     /** One product's live quote. */
     public record Quote(String productId, double buyPrice, double sellPrice) {
@@ -188,6 +203,22 @@ public class BazaarManager {
             return known;
         }
         return productId != null && productId.equals(BirchConfig.get().bazaarProductId) ? 1.0 : 0.0;
+    }
+
+    /**
+     * A name for a product id, since the ids are not readable.
+     *
+     * "LOG:2" tells nobody it means birch wood, and it is the one people have
+     * to recognise to know the price on their screen is the right one.
+     */
+    public static String friendlyName(String productId) {
+        if (BIRCH_PRODUCT.equals(productId)) {
+            return "Birch Wood";
+        }
+        if (ENCHANTED_BIRCH_PRODUCT.equals(productId)) {
+            return "Enchanted Birch Wood";
+        }
+        return productId == null ? "?" : productId;
     }
 
     /** Apply the configured Bazaar tax to a gross amount. */

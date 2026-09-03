@@ -3,7 +3,7 @@
   "id": "birchoptimizer",
   "version": "${version}",
   "name": "Birch Optimizer",
-  "description": "Hypixel Skyblock QOL mod: birch/hour, live Bazaar price, leaderboard rank and a tree regeneration timer.",
+  "description": "Hypixel Skyblock QOL mod for birch foraging: birch/hour, live Bazaar prices, recorded routes with in-world markers, per-tree regen timers and your collection rank.",
   "authors": [
     "skylerressi"
   ],

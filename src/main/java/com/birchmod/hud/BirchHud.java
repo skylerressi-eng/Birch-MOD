@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.birchmod.api.BazaarManager;
-import com.birchmod.api.LeaderboardManager;
+import com.birchmod.api.CollectionApi;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.BirchMod;
 import com.birchmod.route.LapTracker;
@@ -50,20 +50,20 @@ public class BirchHud implements HudElement {
     private final TreeRegenTracker regenTracker;
     private final CollectionRankTracker collectionRank;
     private final BazaarManager bazaar;
-    private final LeaderboardManager leaderboard;
+    private final CollectionApi collectionApi;
     private final RouteBuilder routeBuilder;
 
     public BirchHud(BirchTracker tracker,
                     TreeRegenTracker regenTracker,
                     CollectionRankTracker collectionRank,
                     BazaarManager bazaar,
-                    LeaderboardManager leaderboard,
+                    CollectionApi collectionApi,
                     RouteBuilder routeBuilder) {
         this.tracker = tracker;
         this.regenTracker = regenTracker;
         this.collectionRank = collectionRank;
         this.bazaar = bazaar;
-        this.leaderboard = leaderboard;
+        this.collectionApi = collectionApi;
         this.routeBuilder = routeBuilder;
     }
 
@@ -135,8 +135,18 @@ public class BirchHud implements HudElement {
         int lineHeight = client.font.lineHeight + 2;
         float scale = (float) config.hudScale;
 
+        // Keep it on screen. The position is stored in scaled pixels, so a spot
+        // that was fine on a wide monitor is off the edge in a small window or
+        // at a bigger GUI scale — and an overlay you cannot see is not
+        // distinguishable from one that has stopped working. Clamped when drawn
+        // rather than when set, because the window is what changes.
+        int panelWidth = Math.round(builtWidth * scale);
+        int panelHeight = Math.round(lineHeight * (lines.size() + 1) * scale);
+        int panelX = clampToScreen(config.hudX, panelWidth, graphics.guiWidth());
+        int panelY = clampToScreen(config.hudY, panelHeight, graphics.guiHeight());
+
         graphics.pose().pushMatrix();
-        graphics.pose().translate(config.hudX, config.hudY);
+        graphics.pose().translate(panelX, panelY);
         if (scale != 1.0f) {
             graphics.pose().scale(scale, scale);
         }
@@ -157,6 +167,17 @@ public class BirchHud implements HudElement {
         }
 
         graphics.pose().popMatrix();
+    }
+
+    /**
+     * Hold one edge of the overlay inside the window.
+     *
+     * Never pushed past zero, so a panel taller than the window still starts at
+     * the top and shows what it can rather than being nudged off the other way.
+     */
+    static int clampToScreen(int wanted, int extent, int screen) {
+        int limit = Math.max(0, screen - extent - PADDING);
+        return Math.max(0, Math.min(wanted, limit));
     }
 
     private List<Line> buildLines(BirchConfig config) {
@@ -210,12 +231,17 @@ public class BirchHud implements HudElement {
         }
 
         if (config.showLeaderboard) {
-            if (leaderboard.hasRank()) {
-                String title = leaderboard.getRankTitle();
-                String suffix = (title == null || title.isEmpty()) ? "" : " (" + title + ")";
-                lines.add(new Line("Rank: #" + INT_FMT.format(leaderboard.getRank()) + suffix, COLOR_AQUA));
+            // The lifetime total from the API, which is what a key can actually
+            // fetch. The rank above it comes from the in-game leaderboard and
+            // needs no key — two different numbers from two different places,
+            // so they are labelled as two different things.
+            if (collectionApi.hasCollection()) {
+                String profile = collectionApi.getProfileName();
+                String suffix = (profile == null || profile.isEmpty()) ? "" : " (" + profile + ")";
+                lines.add(new Line("Birch total: "
+                        + INT_FMT.format(collectionApi.getBirchCollected()) + suffix, COLOR_AQUA));
             } else {
-                lines.add(new Line("Rank: " + leaderboard.getStatus(), COLOR_GREY));
+                lines.add(new Line("Birch total: " + collectionApi.getStatus(), COLOR_GREY));
             }
         }
 

@@ -2,6 +2,7 @@ package com.birchmod.tracking;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -119,7 +120,11 @@ public class CollectionRankTracker {
         }
 
         // Otherwise the line must name the player: "#12 Notch 1,234,567".
-        if (username == null || !line.toLowerCase().contains(username.toLowerCase())) {
+        // Case folded against a fixed locale, not the player's. Turkish folds
+        // "I" to a dotless "ı", so a username with an I in it stopped matching
+        // its own line on the leaderboard for anybody running a Turkish system.
+        if (username == null || !line.toLowerCase(Locale.ROOT)
+                .contains(username.toLowerCase(Locale.ROOT))) {
             return null;
         }
         Matcher rankMatcher = RANK_PATTERN.matcher(line);
