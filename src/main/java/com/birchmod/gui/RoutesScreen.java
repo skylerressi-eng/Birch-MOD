@@ -47,11 +47,11 @@ public class RoutesScreen extends Screen {
     private final Screen parent;
 
     private RouteListWidget list;
-    private Button follow;
-    private Button makeDefault;
-    private Button export;
-    private Button copy;
-    private Button delete;
+    private BarkButton follow;
+    private BarkButton makeDefault;
+    private BarkButton export;
+    private BarkButton copy;
+    private BarkButton delete;
 
     /** Redrawn each frame from the selection, so the panel never lies. */
     private String shownName = null;
@@ -116,59 +116,54 @@ public class RoutesScreen extends Screen {
         buttonHeight = Math.max(MIN_BUTTON_HEIGHT, Math.min(BUTTON_HEIGHT, pitch - 1));
 
         int y = buttonsTop;
-        follow = addRenderableWidget(Button.builder(Component.literal("Follow"), b -> {
-            withSelection(name -> {
-                RouteLibrary.setActive(name);
-                resetRoute();
-                Notifier.actionBar("§aFollowing " + name);
-                list.refresh(regenSeconds());
-            });
-        }).bounds(detailX, y, detailWidth, buttonHeight).build());
+        follow = addRenderableWidget(new BarkButton(detailX, y, detailWidth, buttonHeight,
+                Component.literal("Follow"), b -> withSelection(name -> {
+                    RouteLibrary.setActive(name);
+                    resetRoute();
+                    Notifier.actionBar("§aFollowing " + name);
+                    list.refresh(regenSeconds());
+                })));
         follow.setTooltip(Tooltip.create(Component.literal(
                 "Start following this route now.")));
 
         y += pitch;
-        makeDefault = addRenderableWidget(Button.builder(Component.literal("Make default"), b -> {
-            withSelection(name -> {
-                RouteLibrary.setDefault(name);
-                resetRoute();
-                Notifier.actionBar("§6" + name + " is your default");
-                list.refresh(regenSeconds());
-            });
-        }).bounds(detailX, y, detailWidth, buttonHeight).build());
+        makeDefault = addRenderableWidget(new BarkButton(detailX, y, detailWidth, buttonHeight,
+                Component.literal("Make default"), b -> withSelection(name -> {
+                    RouteLibrary.setDefault(name);
+                    resetRoute();
+                    Notifier.actionBar("§6" + name + " is your default");
+                    list.refresh(regenSeconds());
+                })));
         makeDefault.setTooltip(Tooltip.create(Component.literal(
                 "Come back to this route on every login, whatever you were "
                         + "following when you left.")));
 
         y += pitch;
-        export = addRenderableWidget(Button.builder(Component.literal("Export to file"),
-                b -> withSelection(this::exportToFile))
-                .bounds(detailX, y, detailWidth, buttonHeight).build());
+        export = addRenderableWidget(new BarkButton(detailX, y, detailWidth, buttonHeight,
+                Component.literal("Export to file"), b -> withSelection(this::exportToFile)));
         export.setTooltip(Tooltip.create(Component.literal(
                 "Save this route as a file you can send to somebody.")));
 
         y += pitch;
-        copy = addRenderableWidget(Button.builder(Component.literal("Copy code"),
-                b -> withSelection(this::copyCode))
-                .bounds(detailX, y, detailWidth, buttonHeight).build());
+        copy = addRenderableWidget(new BarkButton(detailX, y, detailWidth, buttonHeight,
+                Component.literal("Copy code"), b -> withSelection(this::copyCode)));
         copy.setTooltip(Tooltip.create(Component.literal(
                 "Put a share code on the clipboard, to paste straight into a chat.")));
 
         y += pitch;
-        delete = addRenderableWidget(Button.builder(Component.literal("§cDelete"),
-                b -> onDeletePressed())
-                .bounds(detailX, y, detailWidth, buttonHeight).build());
+        delete = addRenderableWidget(new BarkButton(detailX, y, detailWidth, buttonHeight,
+                Component.literal("Delete"), b -> onDeletePressed()).danger(true));
         delete.setTooltip(Tooltip.create(Component.literal(
                 "Remove this route for good. Asks once before it does.")));
 
         // Footer.
         int footerY = Chrome.footerY(height);
-        addRenderableWidget(Button.builder(Component.literal("Import a route…"),
-                        b -> minecraft.setScreen(new ImportScreen(this)))
-                .bounds(Chrome.MARGIN, footerY, 130, BUTTON_HEIGHT).build());
+        addRenderableWidget(new BarkButton(Chrome.MARGIN, footerY, 130, BUTTON_HEIGHT,
+                Component.literal("Import a route…"),
+                b -> minecraft.setScreen(new ImportScreen(this))));
 
-        addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
-                .bounds(width - Chrome.MARGIN - 90, footerY, 90, BUTTON_HEIGHT).build());
+        addRenderableWidget(new BarkButton(width - Chrome.MARGIN - 90, footerY, 90,
+                BUTTON_HEIGHT, Component.literal("Done"), b -> onClose()));
 
         updateButtons();
     }
@@ -223,8 +218,9 @@ public class RoutesScreen extends Screen {
             disarm();
         }
         delete.active = any;
-        delete.setMessage(Component.literal(
-                deleteArmed() ? "§4§lDelete for good?" : "§cDelete"));
+        // The stain says it is destructive; the label is free to say what
+        // pressing it will actually do next.
+        delete.setMessage(Component.literal(deleteArmed() ? "Delete for good?" : "Delete"));
     }
 
     /**

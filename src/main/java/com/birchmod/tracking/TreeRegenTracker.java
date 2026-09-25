@@ -83,19 +83,6 @@ public class TreeRegenTracker {
     /** How tall a trunk can be. */
     private static final int TRUNK_HEIGHT = 12;
 
-    /**
-     * How far below its base a tree still reads its own ground.
-     *
-     * A footprint claims columns, and a claimed column is the only thing that
-     * may report wood standing in it — discovery walks past birch whose column
-     * is already owned, on the understanding that its owner is watching. That
-     * understanding broke on a slope: scanning upward from the base only, a log
-     * lying a block or two downhill inside the footprint belonged to a tree that
-     * could not see it and was refused a tree of its own, so it never appeared
-     * at all. This is why a pile of logs on the ground would sometimes go
-     * unmarked while an identical pile ten blocks away was fine.
-     */
-    private static final int TRUNK_BELOW = 3;
 
     /**
      * How far apart in height two positions can be and still be one tree.
@@ -921,32 +908,6 @@ public class TreeRegenTracker {
         return true;
     }
 
-    /**
-     * How many of a log's four sides are open to the air.
-     *
-     * Four is a log standing clear; zero is one buried in canopy. Four block
-     * reads per log, and only for logs that were found, so a bare trunk costs
-     * almost nothing and a dense one costs a few dozen reads on the slow sweep.
-     */
-    private static int exposure(SolidSampler solid, int x, int y, int z) {
-        if (solid == null) {
-            return 4;
-        }
-        int open = 0;
-        if (!solid.isSolid(x + 1, y, z)) {
-            open++;
-        }
-        if (!solid.isSolid(x - 1, y, z)) {
-            open++;
-        }
-        if (!solid.isSolid(x, y, z + 1)) {
-            open++;
-        }
-        if (!solid.isSolid(x, y, z - 1)) {
-            open++;
-        }
-        return open;
-    }
 
     /** Read the footprint into {@link #scan}. Allocates nothing. */
     private void scanFootprint(WoodSampler sampler, SolidSampler solid, Tree tree, boolean full) {
@@ -978,7 +939,7 @@ public class TreeRegenTracker {
                 int z = base.getZ() + dz;
                 boolean cellHasWood = false;
 
-                for (int dy = -TRUNK_BELOW; dy < TRUNK_HEIGHT; dy++) {
+                for (int dy = -MarkerChoice.BELOW; dy < TRUNK_HEIGHT; dy++) {
                     int y = base.getY() + dy;
                     if (!sampler.isWood(x, y, z)) {
                         continue;
@@ -992,9 +953,7 @@ public class TreeRegenTracker {
                     // beats a branch; and above all, a log with air beside it
                     // beats one walled in by leaves. Exposure dominates because
                     // a marker you cannot see is the whole complaint.
-                    int score = Math.abs(y - desired)
-                            + (Math.abs(dx) + Math.abs(dz)) * 8
-                            + (4 - exposure(solid, x, y, z)) * 10;
+                    int score = MarkerChoice.score(x, y, z, desired, dx, dz, solid::isSolid);
                     if (score < scan.bestScore) {
                         scan.bestScore = score;
                         scan.bestX = x;

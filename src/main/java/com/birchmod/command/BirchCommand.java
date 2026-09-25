@@ -456,7 +456,8 @@ public final class BirchCommand {
         String[] features = {
                 "hud", "tracers", "tree-timers", "birch-tracker", "regen-tracker",
                 "collection-rank", "route-builder", "keybinds", "skyblock-detect",
-                "movement", "leftovers", "travel-chain", "gui-screen", "gui-routes"
+                "movement", "leftovers", "travel-chain",
+                "gui-screen", "gui-routes", "gui-toggle", "gui-action"
         };
 
         boolean anyFailure = false;

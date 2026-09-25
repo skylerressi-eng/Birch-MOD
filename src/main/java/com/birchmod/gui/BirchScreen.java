@@ -14,7 +14,6 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
@@ -177,9 +176,13 @@ public final class BirchScreen extends Screen {
         // Search keeps its text across a rebuild, so typing and then toggling
         // something does not throw away what was typed.
         String previous = needle;
-        search = new EditBox(font, Chrome.MARGIN, Chrome.CONTENT_TOP,
-                width - Chrome.MARGIN * 2, SEARCH_HEIGHT,
+        search = new EditBox(font, Chrome.MARGIN + 5, Chrome.CONTENT_TOP + 5,
+                width - Chrome.MARGIN * 2 - 12, SEARCH_HEIGHT - 6,
                 Component.literal("Search settings"));
+        // Vanilla draws a grey box with a hard border, which on wood looks like
+        // a sticker. The groove behind it is drawn with the rest of the panel.
+        search.setBordered(false);
+        search.setTextColor(Chrome.TEXT);
         search.setHint(Component.literal("Search settings…"));
         search.setMaxLength(48);
         search.setValue(previous);
@@ -190,8 +193,8 @@ public final class BirchScreen extends Screen {
         });
         addRenderableWidget(search);
 
-        addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
-                .bounds(width - Chrome.MARGIN - 80, Chrome.footerY(height), 80, 20).build());
+        addRenderableWidget(new BarkButton(width - Chrome.MARGIN - 80,
+                Chrome.footerY(height), 80, 20, Component.literal("Done"), b -> onClose()));
 
         layout();
     }
@@ -331,6 +334,11 @@ public final class BirchScreen extends Screen {
             minecraft.setScreen(new RoutesScreen(parent));
             return;
         }
+        if (index == activeTab) {
+            // Already here. Rebuilding would throw away how far down the list
+            // you had scrolled, for a click that asked for nothing.
+            return;
+        }
         activeTab = index;
         scroll = 0;
         rebuildWidgets();
@@ -357,6 +365,9 @@ public final class BirchScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partial) {
         Chrome.background(graphics, font, width, height, activeTab);
+        // The groove the search box sits in, drawn before the box itself.
+        Chrome.groove(graphics, Chrome.MARGIN, Chrome.CONTENT_TOP,
+                width - Chrome.MARGIN * 2, SEARCH_HEIGHT);
         super.extractRenderState(graphics, mouseX, mouseY, partial);
 
         int top = listTop();
@@ -376,12 +387,8 @@ public final class BirchScreen extends Screen {
             if (!p.widget().visible) {
                 continue;
             }
-            int y = p.widget().getY();
-            if (mouseX >= p.x() && mouseX < p.x() + p.widget().getWidth()
-                    && mouseY >= y && mouseY < y + WIDGET_HEIGHT) {
-                Chrome.hoverRow(graphics, p.x() - 3, y - 2,
-                        p.x() + p.widget().getWidth() + 3, y + WIDGET_HEIGHT + 2);
-            }
+            // No wash behind the control: bark lights its own edge on hover, and
+            // two highlights saying the same thing read as a rendering fault.
             p.widget().extractRenderState(graphics, mouseX, mouseY, partial);
         }
 
@@ -429,16 +436,14 @@ public final class BirchScreen extends Screen {
                               java.util.function.BooleanSupplier get,
                               java.util.function.Consumer<Boolean> set) {
         return new Item(null, label, tooltip, () -> {
-            CycleButton<Boolean> button = CycleButton.onOffBuilder(get.getAsBoolean())
-                    .create(0, 0, 150, WIDGET_HEIGHT, Component.literal(label),
-                            (widget, value) -> {
-                                set.accept(value);
-                                BirchConfig.save();
-                            });
+            BarkToggle toggle = new BarkToggle(label, get, value -> {
+                set.accept(value);
+                BirchConfig.save();
+            });
             if (tooltip != null) {
-                button.setTooltip(Tooltip.create(Component.literal(tooltip)));
+                toggle.setTooltip(Tooltip.create(Component.literal(tooltip)));
             }
-            return button;
+            return toggle;
         });
     }
 
@@ -447,7 +452,7 @@ public final class BirchScreen extends Screen {
                               double min, double max, double step,
                               DoubleSupplier get, DoubleConsumer set) {
         return new Item(null, label, tooltip, () -> {
-            OptionSlider s = new OptionSlider(label, min, max, step, get.getAsDouble(), value -> {
+            BarkSlider s = new BarkSlider(label, min, max, step, get.getAsDouble(), value -> {
                 set.accept(value);
                 BirchConfig.save();
             });
@@ -461,9 +466,8 @@ public final class BirchScreen extends Screen {
     /** A plain button that runs something. */
     public static Item action(String label, String tooltip, Runnable onPress) {
         return new Item(null, label, tooltip, () -> {
-            Button button = Button.builder(Component.literal(label),
-                            Chrome.safely("action", onPress))
-                    .bounds(0, 0, 150, WIDGET_HEIGHT).build();
+            BarkButton button = new BarkButton(0, 0, 150, WIDGET_HEIGHT,
+                    Component.literal(label), Chrome.safely("action", onPress));
             if (tooltip != null) {
                 button.setTooltip(Tooltip.create(Component.literal(tooltip)));
             }

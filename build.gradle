@@ -30,6 +30,33 @@ dependencies {
     // Plain `implementation` (not `modImplementation`) — Loom no longer remaps.
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    testImplementation platform("org.junit:junit-bom:${project.junit_version}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+//
+// These exist in the repository rather than beside it because the whole point
+// of a regression test is to outlive the thing that found the bug. This mod's
+// checks lived in a scratch directory for most of its life, which meant every
+// bug they pinned down was free to come back the moment that directory went
+// away — and eventually it did.
+//
+// Nothing here starts Minecraft. What is tested is the arithmetic and the
+// decisions: which log a marker lands on, whether two markers are the same
+// tree, how a rate is measured, what a save leaves on disk if it is
+// interrupted, whether a panel fits the window. Those are the parts that have
+// actually been wrong, and they are all reachable without a game.
+// ---------------------------------------------------------------------------
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat = 'full'
+    }
 }
 
 processResources {

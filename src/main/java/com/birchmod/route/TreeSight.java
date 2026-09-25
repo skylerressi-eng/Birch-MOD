@@ -1,6 +1,7 @@
 package com.birchmod.route;
 
 import com.birchmod.config.BirchConfig;
+import com.birchmod.tracking.MarkerChoice;
 import com.birchmod.tracking.TreeRegenTracker;
 
 import net.minecraft.client.Minecraft;
@@ -24,8 +25,14 @@ import net.minecraft.world.phys.Vec3;
  */
 final class TreeSight {
 
-    /** How far up to look for wood when reading the world directly. */
-    private static final int PROBE_HEIGHT = 12;
+    /**
+     * How far up to look for wood when reading the world directly.
+     *
+     * The window below the base comes from {@link MarkerChoice}, because a log
+     * lying downhill inside a footprint is the tracker's business too and the
+     * two must look at the same blocks.
+     */
+    private static final int PROBE_HEIGHT = MarkerChoice.ABOVE;
 
     private TreeSight() {
     }
@@ -97,6 +104,14 @@ final class TreeSight {
         int radius = Math.max(0, Math.min(2, BirchConfig.get().treeFootprint));
         int desired = recorded.getY() + BirchConfig.get().treeCenterHeight;
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        // A second cursor for the exposure reads. Sharing one with the loop
+        // above works only for as long as nobody moves the scoring call, which
+        // is the kind of thing that holds right up until it does not.
+        BlockPos.MutableBlockPos neighbour = new BlockPos.MutableBlockPos();
+        MarkerChoice.Solid solid = (sx, sy, sz) -> {
+            neighbour.set(sx, sy, sz);
+            return !client.level.getBlockState(neighbour).isAir();
+        };
 
         int bestScore = Integer.MAX_VALUE;
         int bestX = 0;
@@ -105,7 +120,7 @@ final class TreeSight {
 
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                for (int dy = 0; dy < PROBE_HEIGHT; dy++) {
+                for (int dy = -MarkerChoice.BELOW; dy < PROBE_HEIGHT; dy++) {
                     int x = recorded.getX() + dx;
                     int y = recorded.getY() + dy;
                     int z = recorded.getZ() + dz;
@@ -114,9 +129,12 @@ final class TreeSight {
                     if (!state.is(Blocks.BIRCH_LOG) && !state.is(Blocks.BIRCH_WOOD)) {
                         continue;
                     }
-                    // Same preference the tracker uses: closest to the wanted
-                    // height, and heavily biased toward the trunk itself.
-                    int score = Math.abs(y - desired) + (Math.abs(dx) + Math.abs(dz)) * 8;
+                    // The same preference the tracker uses, because it is now
+                    // literally the same code. This path used to score without
+                    // exposure, so a recorded stop out of tracking range could
+                    // still put its marker on a log buried in canopy — the very
+                    // bug the tracker had been fixed for.
+                    int score = MarkerChoice.score(x, y, z, desired, dx, dz, solid);
                     if (score < bestScore) {
                         bestScore = score;
                         bestX = x;

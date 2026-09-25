@@ -42,29 +42,22 @@ public final class Chrome {
     public static final int PAD = 8;
 
     // ---- Palette ----
-    // Near-black bands, a slightly lifted panel, and one accent. Birch green is
-    // the accent because it is what every marker in the world is already drawn
-    // in; a settings screen in a different colour would read as a different mod.
+    // One source of colour: the skin owns the wood and the foliage, and this
+    // names the roles the screens ask for. Two palettes drifting apart is how a
+    // screen ends up with three different greens in it.
 
-    private static final int BAND = 0xF00B0D10;
-    private static final int PANEL_TOP = 0xF0181C22;
-    private static final int PANEL_BOTTOM = 0xF012151A;
     private static final int RULE = 0x33FFFFFF;
-    private static final int RULE_STRONG = 0x55FFFFFF;
 
-    public static final int ACCENT = 0xFF6ECF6E;
-    private static final int ACCENT_DIM = 0x556ECF6E;
-    private static final int TAB_HOVER = 0x22FFFFFF;
+    /** Birch leaves. The accent everywhere, including on markers in the world. */
+    public static final int ACCENT = BirchSkin.LEAF;
+    private static final int ACCENT_DIM = BirchSkin.withAlpha(BirchSkin.LEAF, 0x66);
 
-    public static final int TEXT = 0xFFFFFFFF;
-    public static final int TEXT_DIM = 0xFF9AA1A9;
-    public static final int TEXT_FAINT = 0xFF6A7078;
-    public static final int TEXT_GREEN = 0xFF7FE07F;
-    public static final int TEXT_GOLD = 0xFFFFC24D;
-    public static final int TEXT_RED = 0xFFE87070;
-
-    /** Alternating row wash, so a long list of controls does not run together. */
-    public static final int ROW_TINT = 0x14FFFFFF;
+    public static final int TEXT = 0xFFF2EDE1;
+    public static final int TEXT_DIM = 0xFFB9B0A0;
+    public static final int TEXT_FAINT = 0xFF83796B;
+    public static final int TEXT_GREEN = BirchSkin.LEAF;
+    public static final int TEXT_GOLD = 0xFFE8B75A;
+    public static final int TEXT_RED = 0xFFE0796B;
 
     private Chrome() {
     }
@@ -117,15 +110,32 @@ public final class Chrome {
             final int index = i;
             boolean current = index == active;
 
-            Button button = Button.builder(
-                            Component.literal(current
-                                    ? "§f§l" + TABS.get(i)
-                                    : "§7" + TABS.get(i)),
-                            b -> onPick.accept(index))
-                    .bounds(startX + i * tab, TAB_Y, tab - 3, TAB_HEIGHT)
-                    .build();
-            button.active = !current;
+            BarkButton button = new BarkTab(startX + i * tab, TAB_Y, tab - 3, TAB_HEIGHT,
+                    Component.literal(TABS.get(i)), b -> onPick.accept(index), current);
+            // The tab you are on is still clickable-looking rather than greyed:
+            // a disabled tab says "you cannot go here", which is the wrong thing
+            // to say about the page somebody is already reading. It is drawn as
+            // chosen instead, and pressing it does nothing.
             add.accept(button);
+        }
+    }
+
+    /** A tab: bark, with the current one marked as chosen rather than disabled. */
+    private static final class BarkTab extends BarkButton {
+        private final boolean current;
+
+        BarkTab(int x, int y, int w, int h, Component message, OnPress onPress,
+                boolean current) {
+            super(x, y, w, h, message, onPress);
+            this.current = current;
+        }
+
+        @Override
+        protected BirchSkin.State state() {
+            if (current) {
+                return BirchSkin.State.CHOSEN;
+            }
+            return isHoveredOrFocused() ? BirchSkin.State.HOVER : BirchSkin.State.IDLE;
         }
     }
 
@@ -147,52 +157,87 @@ public final class Chrome {
     }
 
     /**
-     * Header band, tab underline, panel and footer band.
+     * The grove, the panel cut into it, and the title.
      *
      * Called before the widgets are drawn, so everything here is behind them.
+     * The wood runs the whole window and the working area is a sawn plank laid
+     * over it — so the screen reads as something standing in a birch forest
+     * rather than as a dark rectangle with green text on it.
      */
     public static void background(GuiGraphicsExtractor graphics, Font font,
                                   int width, int height, int active) {
+        BirchSkin.grove(graphics, width, height);
+
         int panelTop = CONTENT_TOP - PAD;
         int panelBottom = contentBottom(height);
 
-        // Bands top and bottom, panel between them.
-        graphics.fill(0, 0, width, panelTop, BAND);
-        graphics.fillGradient(0, panelTop, width, panelBottom, PANEL_TOP, PANEL_BOTTOM);
-        graphics.fill(0, panelBottom, width, height, BAND);
+        BirchSkin.plank(graphics, MARGIN - PAD, panelTop,
+                width - (MARGIN - PAD) * 2, Math.max(4, panelBottom - panelTop),
+                0xB17C4 ^ width);
 
-        graphics.fill(0, panelTop, width, panelTop + 1, RULE);
-        graphics.fill(0, panelBottom - 1, width, panelBottom, RULE);
-
-        // The accent bar under the active tab, sitting on the panel edge so the
-        // tab and the page below it read as one thing.
+        // The chosen tab is joined to the plank below it by a bar of leaf
+        // green, so the tab and the page read as one thing.
         int tab = tabWidth(width);
         int tabX = tabStripLeft(width) + active * tab;
-        graphics.fill(tabX, TAB_Y + TAB_HEIGHT, tabX + tab - 3, TAB_Y + TAB_HEIGHT + 2, ACCENT);
-        graphics.fill(tabX, panelTop, tabX + tab - 3, panelTop + 1, ACCENT);
+        graphics.fill(tabX, TAB_Y + TAB_HEIGHT, tabX + tab - 3, panelTop + 1,
+                BirchSkin.LEAF_DEEP);
 
         title(graphics, font, width);
     }
 
-    /** The name, a leaf, and which build this is. */
+    /** The name, a sprig of birch, and which build this is. */
     private static void title(GuiGraphicsExtractor graphics, Font font, int width) {
         String name = "Birch Optimizer";
         int x = MARGIN;
-        graphics.text(font, "§a❦", x, 8, ACCENT, false);
-        graphics.text(font, "§f§l" + name, x + 12, 8, TEXT, false);
+
+        // A little trunk-and-leaves mark, drawn rather than spelled, so the
+        // header carries the same wood the rest of the screen is made of.
+        graphics.fill(x + 3, 9, x + 5, 19, BirchSkin.BARK_MID);
+        graphics.fill(x + 3, 12, x + 5, 13, BirchSkin.LENTICEL);
+        graphics.fill(x + 3, 16, x + 5, 17, BirchSkin.LENTICEL);
+        graphics.fill(x, 6, x + 8, 9, BirchSkin.LEAF_DEEP);
+        graphics.fill(x + 1, 4, x + 7, 6, BirchSkin.LEAF);
+
+        graphics.text(font, name, x + 13, 9, TEXT, true);
 
         String version = "v" + BirchMod.version();
-        graphics.text(font, version, width - MARGIN - font.width(version), 8, TEXT_FAINT, false);
+        graphics.text(font, version, width - MARGIN - font.width(version), 9, TEXT_FAINT, false);
     }
 
-    /** A section heading: small caps-ish label with a rule running off it. */
+    /**
+     * A section heading: a leaf, the label, and a rule running off it.
+     *
+     * The rule is what makes it read as a heading rather than as a switched-off
+     * control, which is what it used to be built out of.
+     */
     public static void section(GuiGraphicsExtractor graphics, Font font,
                                String label, int x, int y, int right) {
-        graphics.text(font, "§f" + label, x, y, ACCENT, false);
-        int ruleX = x + font.width(label) + 6;
+        // A leaf, two triangles back to back.
+        for (int i = 0; i < 3; i++) {
+            graphics.fill(x + i, y + 3 - i, x + i + 1, y + 5 + i, BirchSkin.LEAF);
+            graphics.fill(x + 5 - i, y + 3 - i, x + 6 - i, y + 5 + i, BirchSkin.LEAF_DEEP);
+        }
+        int textX = x + 10;
+        graphics.text(font, label, textX, y, ACCENT, false);
+
+        int ruleX = textX + font.width(label) + 6;
         if (ruleX < right) {
             graphics.fill(ruleX, y + 3, right, y + 4, ACCENT_DIM);
         }
+    }
+
+    /**
+     * A groove cut into the wood, for something you type into.
+     *
+     * Dark and inset, with the light edge on the bottom rather than the top, so
+     * it reads as a channel rather than as a raised panel.
+     */
+    public static void groove(GuiGraphicsExtractor graphics, int x, int y, int w, int h) {
+        graphics.fill(x, y, x + w, y + h, 0x80000000);
+        graphics.fill(x, y, x + w, y + 1, 0x60000000);
+        graphics.fill(x, y + h - 1, x + w, y + h, 0x28FFFFFF);
+        graphics.fill(x, y, x + 1, y + h, 0x50000000);
+        graphics.fill(x + w - 1, y, x + w, y + h, 0x18FFFFFF);
     }
 
     /** A horizontal rule across the panel. */
@@ -203,11 +248,8 @@ public final class Chrome {
     /** A boxed sub-panel, for a detail pane beside a list. */
     public static void card(GuiGraphicsExtractor graphics, int left, int top,
                             int right, int bottom) {
-        graphics.fill(left, top, right, bottom, 0x30000000);
-        graphics.fill(left, top, right, top + 1, RULE);
-        graphics.fill(left, bottom - 1, right, bottom, RULE);
-        graphics.fill(left, top, left + 1, bottom, RULE);
-        graphics.fill(right - 1, top, right, bottom, RULE);
+        BirchSkin.plank(graphics, left, top, Math.max(2, right - left),
+                Math.max(2, bottom - top), 0xCA4D ^ left ^ top);
     }
 
     /**
@@ -222,19 +264,30 @@ public final class Chrome {
         if (content <= extent) {
             return;
         }
-        graphics.fill(x, top, x + 3, top + extent, 0x30000000);
+        graphics.fill(x, top, x + 4, top + extent, 0x50000000);
 
         int barHeight = Math.max(20, extent * extent / content);
         int span = extent - barHeight;
         int maxOffset = content - extent;
         int barTop = top + (maxOffset <= 0 ? 0 : (int) ((long) span * offset / maxOffset));
-        graphics.fill(x, barTop, x + 3, barTop + barHeight, RULE_STRONG);
+        // A sliver of trunk, complete with a mark or two, rather than a grey bar.
+        graphics.fill(x, barTop, x + 4, barTop + barHeight, BirchSkin.BARK_MID);
+        graphics.fill(x + 3, barTop, x + 4, barTop + barHeight, BirchSkin.BARK_DARK);
+        for (int i = 0; i < Math.max(1, barHeight / 9); i++) {
+            int my = barTop + 3 + (int) (BirchSkin.noise(0x5C0B, i) * Math.max(1, barHeight - 6));
+            graphics.fill(x, my, x + 3, my + 1, BirchSkin.withAlpha(BirchSkin.LENTICEL, 0xA0));
+        }
     }
 
-    /** Highlight behind the control the mouse is over. */
+    /**
+     * A wash behind the control the mouse is over.
+     *
+     * Warm rather than white: a plain white overlay on wood grey it out, which
+     * reads as the row being switched off rather than being pointed at.
+     */
     public static void hoverRow(GuiGraphicsExtractor graphics, int left, int top,
                                 int right, int bottom) {
-        graphics.fill(left, top, right, bottom, TAB_HOVER);
+        graphics.fill(left, top, right, bottom, BirchSkin.withAlpha(BirchSkin.LEAF, 0x18));
     }
 
     /** Bottom of the usable area. */

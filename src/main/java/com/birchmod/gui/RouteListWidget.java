@@ -68,6 +68,23 @@ public final class RouteListWidget extends ObjectSelectionList<RouteListWidget.R
         return getWidth() - 12;
     }
 
+    /** The list sits on a sawn plank, like every other panel on these screens. */
+    @Override
+    protected void extractListBackground(GuiGraphicsExtractor graphics) {
+        BirchSkin.plank(graphics, getX(), getY(), getWidth(), getHeight(), 0x1157 ^ getX());
+    }
+
+    /**
+     * No separators.
+     *
+     * Vanilla rules a grey line between every row. On wood that reads as a
+     * saw cut across the grain, and the rows already separate themselves —
+     * the one you have picked is a slip of bark and the rest are not.
+     */
+    @Override
+    protected void extractListSeparators(GuiGraphicsExtractor graphics) {
+    }
+
     /** One route. */
     public class RouteEntry extends ObjectSelectionList.Entry<RouteEntry> {
 
@@ -88,15 +105,60 @@ public final class RouteListWidget extends ObjectSelectionList<RouteListWidget.R
         @Override
         public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
                                    boolean hovered, float partial) {
-            int x = getContentX() + 4;
-            int y = getContentY() + 3;
+            boolean picked = getSelected() == this;
 
-            String marks = (following ? "§a▶ " : "") + (isDefault ? "§6★ " : "");
-            graphics.text(minecraft.font, marks + "§f" + name, x, y, Chrome.TEXT, false);
+            // The route you have picked is a slip of bark laid on the plank;
+            // the others are just text on wood. That is the whole selection
+            // indicator, and it is legible at a glance down a long list.
+            int rowX = getContentX() - 2;
+            int rowW = getContentWidth() + 4;
+            if (picked) {
+                BirchSkin.bark(graphics, rowX, getContentY() - 1, rowW, getContentHeight(),
+                        BirchSkin.seedFor(name), BirchSkin.State.IDLE);
+            } else if (hovered) {
+                Chrome.hoverRow(graphics, rowX, getContentY() - 1,
+                        rowX + rowW, getContentY() - 1 + getContentHeight());
+            }
+
+            int ink = picked ? BirchSkin.INK : Chrome.TEXT;
+            int inkDim = picked ? BirchSkin.INK_SOFT : Chrome.TEXT_DIM;
+            int x = getContentX() + 4;
+            int y = getContentY() + 2;
+
+            // Markers, drawn rather than spelled, so they read the same on bark
+            // as on wood and do not fight the ink colour.
+            int markX = x;
+            if (following) {
+                arrow(graphics, markX, y + 1, BirchSkin.LEAF_DEEP);
+                markX += 8;
+            }
+            if (isDefault) {
+                star(graphics, markX, y + 1, Chrome.TEXT_GOLD);
+                markX += 8;
+            }
+
+            int room = getContentWidth() - (markX - getContentX()) - 8;
+            graphics.text(minecraft.font,
+                    BarkButton.fit(minecraft.font, name, room), markX, y, ink, false);
 
             String detail = stops + " stops"
-                    + (bestLap > 0.0 ? "  §8best " + LapTracker.format(bestLap) : "");
-            graphics.text(minecraft.font, "§7" + detail, x, y + 11, Chrome.TEXT_DIM, false);
+                    + (bestLap > 0.0 ? "  ·  best " + LapTracker.format(bestLap) : "");
+            graphics.text(minecraft.font,
+                    BarkButton.fit(minecraft.font, detail, getContentWidth() - 8),
+                    x, y + 11, inkDim, false);
+        }
+
+        /** A small solid triangle pointing right. */
+        private void arrow(GuiGraphicsExtractor graphics, int x, int y, int colour) {
+            for (int i = 0; i < 4; i++) {
+                graphics.fill(x + i, y + i, x + i + 1, y + 7 - i, colour);
+            }
+        }
+
+        /** A four-pointed spark, for the default route. */
+        private void star(GuiGraphicsExtractor graphics, int x, int y, int colour) {
+            graphics.fill(x + 2, y, x + 4, y + 7, colour);
+            graphics.fill(x, y + 2, x + 6, y + 4, colour);
         }
 
         @Override
