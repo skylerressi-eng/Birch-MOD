@@ -143,6 +143,70 @@ public final class BirchSkin {
         }
     }
 
+    /** The most marks any one surface gets, however large it is. */
+    public static final int MAX_MARKS = 14;
+
+    /** Returned by {@link #placeMark} when a surface is too small for one. */
+    public static final long NO_MARK = -1L;
+
+    /** How many marks a surface of this size carries. */
+    public static int markCount(int w, int h) {
+        return Math.min(MAX_MARKS, Math.max(2, (w * h) / 420));
+    }
+
+    /**
+     * Where one lenticel goes, as offsets from the surface's own corner.
+     *
+     * Pure, and packed into a long rather than an object, because this runs for
+     * every mark on every surface on every frame and the whole skin is meant to
+     * allocate nothing. Being pure is the point: it means "no mark ever escapes
+     * the surface it belongs to" is something a test can check across every size
+     * and seed, instead of something argued about in a comment. A rectangle
+     * drawn outside its widget does not look like a bug in a button, it looks
+     * like the screen is broken.
+     *
+     * The horizontal arithmetic balances itself: the room a mark may start in is
+     * reduced by exactly its own length, so the right edge lands at
+     * {@code w - 4} whatever length came out of the hash. The vertical side does
+     * the same with thickness.
+     *
+     * @return dx, dy, length and thickness packed 16 bits each, or
+     *         {@link #NO_MARK} if there is no room for this one
+     */
+    public static long placeMark(int seed, int i, int w, int h) {
+        int len = 3 + (int) (noise(seed, 300 + i) * Math.min(w / 3.0f, 14.0f));
+        int thick = noise(seed, 400 + i) > 0.72f ? 2 : 1;
+
+        int span = w - 6 - len;
+        int room = h - 4 - thick;
+        if (span <= 0 || room <= 0) {
+            return NO_MARK;
+        }
+        int dx = 3 + (int) (noise(seed, 500 + i) * span);
+        int dy = 2 + (int) (noise(seed, 600 + i) * room);
+
+        return ((long) (dx & 0xFFFF) << 48)
+                | ((long) (dy & 0xFFFF) << 32)
+                | ((long) (len & 0xFFFF) << 16)
+                | (thick & 0xFFFF);
+    }
+
+    public static int markX(long packed) {
+        return (int) ((packed >>> 48) & 0xFFFF);
+    }
+
+    public static int markY(long packed) {
+        return (int) ((packed >>> 32) & 0xFFFF);
+    }
+
+    public static int markLength(long packed) {
+        return (int) ((packed >>> 16) & 0xFFFF);
+    }
+
+    public static int markThickness(long packed) {
+        return (int) (packed & 0xFFFF);
+    }
+
     /**
      * The dashes.
      *
@@ -153,22 +217,18 @@ public final class BirchSkin {
      */
     private static void lenticels(GuiGraphicsExtractor graphics, int x, int y, int w, int h,
                                   int seed, State state) {
-        int marks = Math.max(2, (w * h) / 420);
-        marks = Math.min(marks, 14);
-
+        int marks = markCount(w, h);
         int alpha = state == State.DISABLED ? 0x70 : 0xE0;
 
         for (int i = 0; i < marks; i++) {
-            int len = 3 + (int) (noise(seed, 300 + i) * Math.min(w / 3.0f, 14.0f));
-            int thick = noise(seed, 400 + i) > 0.72f ? 2 : 1;
-
-            int span = w - 6 - len;
-            int room = h - 4 - thick;
-            if (span <= 0 || room <= 0) {
+            long placed = placeMark(seed, i, w, h);
+            if (placed == NO_MARK) {
                 continue;
             }
-            int mx = x + 3 + (int) (noise(seed, 500 + i) * span);
-            int my = y + 2 + (int) (noise(seed, 600 + i) * room);
+            int mx = x + markX(placed);
+            int my = y + markY(placed);
+            int len = markLength(placed);
+            int thick = markThickness(placed);
 
             graphics.fill(mx, my, mx + len, my + thick, withAlpha(LENTICEL, alpha));
             // The lip, half a mark long and offset, so it does not read as an

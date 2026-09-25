@@ -199,12 +199,25 @@ public final class BirchScreen extends Screen {
         layout();
     }
 
+    /** Shortest scrolling area worth drawing; below this there is no screen. */
+    private static final int MIN_LIST_HEIGHT = 8;
+
     private int listTop() {
         return Chrome.CONTENT_TOP + SEARCH_HEIGHT + 8;
     }
 
+    /**
+     * Bottom of the scrolling area, never above its own top.
+     *
+     * In a window short enough that the header, the search box and the footer
+     * between them use up everything, this would otherwise come out above
+     * {@link #listTop()} — and an inverted rectangle handed to a scissor is not
+     * a small visual problem, it is undefined rendering. Minecraft clamps the
+     * GUI scale so it is hard to reach, which is exactly why it would never be
+     * found by looking.
+     */
     private int listBottom() {
-        return Chrome.contentBottom(height) - 4;
+        return Math.max(listTop() + MIN_LIST_HEIGHT, Chrome.contentBottom(height) - 4);
     }
 
     /**
@@ -438,7 +451,7 @@ public final class BirchScreen extends Screen {
         return new Item(null, label, tooltip, () -> {
             BarkToggle toggle = new BarkToggle(label, get, value -> {
                 set.accept(value);
-                BirchConfig.save();
+                BirchConfig.saveThrottled();
             });
             if (tooltip != null) {
                 toggle.setTooltip(Tooltip.create(Component.literal(tooltip)));
@@ -454,7 +467,10 @@ public final class BirchScreen extends Screen {
         return new Item(null, label, tooltip, () -> {
             BarkSlider s = new BarkSlider(label, min, max, step, get.getAsDouble(), value -> {
                 set.accept(value);
-                BirchConfig.save();
+                // Dragging calls back on every mouse movement; a full save per
+                // movement is a stutter you can feel. Closing the screen
+                // flushes, and so does shutdown.
+                BirchConfig.saveThrottled();
             });
             if (tooltip != null) {
                 s.setTooltip(Tooltip.create(Component.literal(tooltip)));

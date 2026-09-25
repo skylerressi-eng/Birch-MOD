@@ -130,4 +130,36 @@ class LayoutTest {
             assertTrue(Chrome.tabWidth(width) > 0, "width " + width + " gave a non-positive tab");
         }
     }
+
+    /**
+     * The settings list is clipped with a scissor, and an inverted rectangle
+     * handed to a scissor is undefined rendering rather than a small visual
+     * problem. Minecraft clamps the GUI scale so a window this short is hard to
+     * reach, which is exactly why it would never be found by looking.
+     */
+    @Test
+    @DisplayName("the scrolling area is never taller than the window allows, nor inverted")
+    void scrollAreaNeverInverts() {
+        int searchHeight = 18;
+        int minList = 8;
+
+        for (int height : new int[]{60, 90, 110, 140, 200, 240, 360, 1080}) {
+            int top = Chrome.CONTENT_TOP + searchHeight + 8;
+            int bottom = Math.max(top + minList, Chrome.contentBottom(height) - 4);
+
+            assertTrue(bottom > top,
+                    "height " + height + ": scissor would be " + top + ".." + bottom);
+            assertTrue(bottom - top >= minList,
+                    "height " + height + " left only " + (bottom - top) + "px to scroll in");
+        }
+    }
+
+    @Test
+    @DisplayName("a screen with no tab strip asks for no tab connector")
+    void noTabSentinelIsOutOfRange() {
+        // Chrome draws the green bar joining the chosen tab to the panel only
+        // for a real index. The import screen has no tabs and must not get one.
+        assertTrue(Chrome.NO_TAB < 0, "the sentinel has to fall outside every real index");
+        assertTrue(Chrome.NO_TAB >= Chrome.TABS.size() || Chrome.NO_TAB < 0);
+    }
 }

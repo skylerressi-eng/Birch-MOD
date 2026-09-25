@@ -149,6 +149,9 @@ public class BirchMod implements ClientModInitializer {
             SessionStats.save();
             TravelGraph.persistNow();
             RouteLibrary.persistNow();
+            // Settings coalesce while a slider is being dragged, so the last
+            // change may still be pending when the game closes.
+            BirchConfig.save();
         });
 
         BirchHud hud = new BirchHud(tracker, regenTracker, collectionRank, bazaar, collectionApi, routeBuilder);

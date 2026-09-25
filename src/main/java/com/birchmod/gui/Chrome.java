@@ -62,6 +62,17 @@ public final class Chrome {
     private Chrome() {
     }
 
+    /**
+     * Passed as the active tab by a screen that has no tab strip.
+     *
+     * The import screen is reached from a button rather than from the tabs and
+     * deliberately has none, but it still draws the shared frame — and the frame
+     * joins the chosen tab to the panel with a bar of leaf green. Given a real
+     * index it drew that bar under a tab that was not there, leaving a stripe
+     * hanging in the header.
+     */
+    public static final int NO_TAB = -1;
+
     /** The five tabs, in order. Index is what a screen reports as its own. */
     public static final List<String> TABS =
             List.of("Overlay", "Route", "Trees", "Alerts", "Routes");
@@ -176,11 +187,14 @@ public final class Chrome {
                 0xB17C4 ^ width);
 
         // The chosen tab is joined to the plank below it by a bar of leaf
-        // green, so the tab and the page read as one thing.
-        int tab = tabWidth(width);
-        int tabX = tabStripLeft(width) + active * tab;
-        graphics.fill(tabX, TAB_Y + TAB_HEIGHT, tabX + tab - 3, panelTop + 1,
-                BirchSkin.LEAF_DEEP);
+        // green, so the tab and the page read as one thing. Only when there is
+        // a tab there to join.
+        if (active >= 0 && active < TABS.size()) {
+            int tab = tabWidth(width);
+            int tabX = tabStripLeft(width) + active * tab;
+            graphics.fill(tabX, TAB_Y + TAB_HEIGHT, tabX + tab - 3, panelTop + 1,
+                    BirchSkin.LEAF_DEEP);
+        }
 
         title(graphics, font, width);
     }

@@ -180,6 +180,20 @@ public final class BirchConfig {
 
     private static BirchConfig instance = new BirchConfig();
 
+    /** Shortest gap between saves driven by a control being dragged. */
+    private static final long MIN_SAVE_GAP_MS = 700L;
+
+    private static volatile boolean dirty = false;
+    private static long lastThrottledSave = 0L;
+
+    /** Settings are written off the client thread; nobody waits on the disk. */
+    private static final java.util.concurrent.ExecutorService IO =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "BirchOptimizer-Config");
+                t.setDaemon(true);
+                return t;
+            });
+
     public static BirchConfig get() {
         return instance;
     }
@@ -214,16 +228,9 @@ public final class BirchConfig {
      * Drawing the whole loop was the default once, and it is the reason a dense
      * grove filled up with lines to trees you were not going to next.
      */
-    private void migrate() {
+    void migrate() {
         if (configVersion < 2) {
             showFullPath = false;
-        }
-        if (configVersion < 4 && "BIRCH_LOG".equals(bazaarProductId)) {
-            // There is no BIRCH_LOG on the Bazaar and there never was, so every
-            // price lookup missed and the row read "product not found". Anyone
-            // who has run this mod has that dead id saved to disk, where it
-            // would go on missing forever.
-            bazaarProductId = BazaarManager.BIRCH_PRODUCT;
         }
         if (configVersion < 3) {
             // Two logs was a stand-in for "do not make clutter", and it cost
@@ -232,11 +239,19 @@ public final class BirchConfig {
             // the decluttering properly now, so the threshold can stop.
             minTreeLogs = 1;
         }
+        if (configVersion < 4 && "BIRCH_LOG".equals(bazaarProductId)) {
+            // There is no BIRCH_LOG on the Bazaar and there never was, so every
+            // price lookup missed and the row read "product not found". Anyone
+            // who has run this mod has that dead id saved to disk, where it
+            // would go on missing forever. Only the dead id is replaced, so a
+            // product somebody chose on purpose is left alone.
+            bazaarProductId = BazaarManager.BIRCH_PRODUCT;
+        }
         configVersion = CURRENT_VERSION;
     }
 
     /** Keep hand-edited values inside sane bounds. */
-    private void clamp() {
+    void clamp() {
         hudScale = Math.max(0.5, Math.min(3.0, hudScale));
         notifyVolume = Math.max(0.0, Math.min(1.0, notifyVolume));
         notifyCooldownSeconds = Math.max(0.0, Math.min(60.0, notifyCooldownSeconds));
@@ -255,6 +270,12 @@ public final class BirchConfig {
         }
     }
 
+    /**
+     * Save now, and wait for it.
+     *
+     * For a command, for closing the settings screen, and for shutdown — places
+     * where one write happens and somebody may be about to quit.
+     */
     public static void save() {
         try {
             // Bound the values on the way out as well as on the way in. Loading
@@ -263,9 +284,50 @@ public final class BirchConfig {
             // went to disk unchecked and was only caught next time the game
             // started.
             instance.clamp();
+            dirty = false;
             SafeFile.write(path(), GSON.toJson(instance));
         } catch (Exception ignored) {
             // Non-fatal: the mod still runs with in-memory settings.
+        }
+    }
+
+    /**
+     * Save because a control moved, at most this often and never on this thread.
+     *
+     * Dragging a slider calls back on every mouse movement, and each call went
+     * straight to a full save — which since saving became crash-safe means a
+     * temporary file, an fsync, a backup copy and an atomic move, on the client
+     * thread, per pixel of drag. Correct, durable, and a stutter you could feel.
+     *
+     * Nobody is waiting on this: the value is already live in memory, the screen
+     * flushes on close, and so does shutdown. So it coalesces, and it goes to
+     * the writer thread.
+     */
+    public static void saveThrottled() {
+        instance.clamp();
+        dirty = true;
+
+        long now = System.currentTimeMillis();
+        if (now - lastThrottledSave < MIN_SAVE_GAP_MS) {
+            return;
+        }
+        lastThrottledSave = now;
+        flushAsync();
+    }
+
+    /** Write the current settings on the writer thread, if anything changed. */
+    private static void flushAsync() {
+        if (!dirty) {
+            return;
+        }
+        dirty = false;
+        try {
+            // Serialise here, write there: the writer must not read fields the
+            // client thread is still changing.
+            String json = GSON.toJson(instance);
+            IO.execute(() -> SafeFile.write(path(), json));
+        } catch (Exception ignored) {
+            // Non-fatal, and the value is still live in memory.
         }
     }
 

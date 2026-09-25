@@ -139,7 +139,7 @@ public class ImportScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partial) {
-        Chrome.background(graphics, font, width, height, 4);
+        Chrome.background(graphics, font, width, height, Chrome.NO_TAB);
         super.extractRenderState(graphics, mouseX, mouseY, partial);
 
         // Inside the panel, not above it: the strip above the panel belongs to
