@@ -8,9 +8,13 @@ so picking the wrong file fails at startup rather than misbehaving quietly.
 
 | Minecraft | Jar | Fabric Loader |
 |---|---|---|
+| **26.1.2** | `birchoptimizer-1.20.0.jar` | 0.19.3+ |
 | **26.2**   | `birchoptimizer-2.1.0.jar`  | 0.19.5+ |
-| **26.1.2** | `birchoptimizer-1.19.1.jar` | 0.19.3+ |
 
 Both need Fabric API and Java 25. Drop the jar in your `mods/` folder.
 
-26.1.2 is frozen at 1.19.1 — development continues on 26.2.
+Both jars are cut from the same source tree at the same point, so they have
+the same features and the same fixes. They differ only where Minecraft renamed
+things between the two versions: the screen and HUD calls, and how geometry is
+handed to the renderer. The 26.2 form of those files is kept on the
+`mc26.2-line` tag.

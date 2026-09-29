@@ -1,8 +1,6 @@
 package com.birchmod.render;
 
 import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.List;
 
 import com.birchmod.config.BirchConfig;
 import com.birchmod.tracking.TreeRegenTracker;
@@ -14,9 +12,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.network.chat.Style;
-import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
@@ -73,19 +69,19 @@ public class TreeTimerRenderer {
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || client.gui.hud.isHidden()) {
+        if (client == null || client.level == null || client.options.hideGui) {
             return;
         }
 
-        Camera camera = client.gameRenderer.mainCamera();
+        Camera camera = client.gameRenderer.getMainCamera();
         Vec3 cameraPos = camera.position();
         PoseStack poseStack = context.poseStack();
-        SubmitNodeCollector collector = context.submitNodeCollector();
+        MultiBufferSource.BufferSource buffers = context.bufferSource();
         Font font = client.font;
 
         double maxRangeSq = config.worldTimerRange * config.worldTimerRange;
 
-        drawLeftoverLogs(context, client, cameraPos, poseStack, collector, maxRangeSq, config);
+        drawLeftoverLogs(context, client, cameraPos, poseStack, buffers, maxRangeSq, config);
 
         if (!config.worldTimersEnabled) {
             return;
@@ -121,12 +117,14 @@ public class TreeTimerRenderer {
                 color = colorFor(remaining, expected);
             }
 
-            drawLabel(poseStack, collector, font, camera, cameraPos, tree.base, label, color);
+            drawLabel(poseStack, buffers, font, camera, cameraPos, tree.base, label, color);
             drewLabel = true;
         }
 
-        // Nothing to flush: submitted text is drawn by the renderer when it
-        // reaches that phase, rather than by us ending a batch here.
+        if (drewLabel) {
+            // Flush the batch so the labels actually reach the screen.
+            buffers.endBatch();
+        }
     }
 
     /**
@@ -161,19 +159,20 @@ public class TreeTimerRenderer {
                                   Minecraft client,
                                   Vec3 cameraPos,
                                   PoseStack poseStack,
-                                  SubmitNodeCollector collector,
+                                  MultiBufferSource.BufferSource buffers,
                                   double maxRangeSq,
                                   BirchConfig config) {
         if (!config.highlightLeftoverLogs || !LINE_WRITER.isUsable()) {
             return;
         }
 
-        float raw = (float) config.lineWidth;
-        final float width = (!Float.isFinite(raw) || raw <= 0.0f) ? 4.0f : raw;
+        VertexConsumer lines = null;
+        Matrix4f matrix = poseStack.last().pose();
+        float width = (float) config.lineWidth;
+        if (!Float.isFinite(width) || width <= 0.0f) {
+            width = 4.0f;
+        }
 
-        // Gather first, submit once. Geometry is handed over as a callback now,
-        // and there is no point submitting one that turns out to draw nothing.
-        List<long[]> toOutline = new ArrayList<>();
         for (TreeRegenTracker.Tree tree : regenTracker.getAllTrees()) {
             if (!tree.isPartiallyChopped()) {
                 continue;
@@ -182,25 +181,23 @@ public class TreeTimerRenderer {
             if (wood.length == 0 || !inRange(tree.base, cameraPos, maxRangeSq)) {
                 continue;
             }
-            toOutline.add(wood);
-        }
-        if (toOutline.isEmpty()) {
-            return;
-        }
 
-        collector.submitCustomGeometry(poseStack, LINES, (pose, lines) -> {
-            Matrix4f m = pose.pose();
+            if (lines == null) {
+                lines = buffers.getBuffer(LINES);
+            }
             // Every log the tracker can still see, wherever in the tree's
             // footprint it stands — a leftover on a side trunk is exactly the
             // one that gets walked past, so a base-column outline missed it.
-            for (long[] wood : toOutline) {
-                for (long packed : wood) {
-                    drawBox(lines, m, pose,
-                            BlockPos.getX(packed), BlockPos.getY(packed), BlockPos.getZ(packed),
-                            cameraPos, LEFTOVER_R, LEFTOVER_G, LEFTOVER_B, 220, width);
-                }
+            for (long packed : wood) {
+                drawBox(lines, matrix, poseStack,
+                        BlockPos.getX(packed), BlockPos.getY(packed), BlockPos.getZ(packed),
+                        cameraPos, LEFTOVER_R, LEFTOVER_G, LEFTOVER_B, 220, width);
             }
-        });
+        }
+
+        if (lines != null) {
+            buffers.endBatch(LINES);
+        }
     }
 
     private boolean inRange(BlockPos pos, Vec3 cameraPos, double maxRangeSq) {
@@ -211,7 +208,7 @@ public class TreeTimerRenderer {
     }
 
     private void drawLabel(PoseStack poseStack,
-                           SubmitNodeCollector collector,
+                           MultiBufferSource buffers,
                            Font font,
                            Camera camera,
                            Vec3 cameraPos,
@@ -230,15 +227,20 @@ public class TreeTimerRenderer {
         // Negative X/Y flips the text the right way up in world space.
         poseStack.scale(-TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE);
 
-        collector.submitText(poseStack,
-                -font.width(label) / 2.0f, 0.0f,
-                FormattedCharSequence.forward(label, Style.EMPTY),
-                false,
-                Font.DisplayMode.SEE_THROUGH,
-                FULL_BRIGHT,
+        Matrix4f matrix = poseStack.last().pose();
+        float halfWidth = font.width(label) / 2.0f;
+
+        font.drawInBatch(
+                label,
+                -halfWidth,
+                0.0f,
                 color,
+                false,
+                matrix,
+                buffers,
+                Font.DisplayMode.SEE_THROUGH,
                 0,
-                0);
+                FULL_BRIGHT);
 
         poseStack.popPose();
     }
@@ -246,7 +248,7 @@ public class TreeTimerRenderer {
     /** Wireframe cube around one block, drawn as twelve edges. */
     private void drawBox(VertexConsumer lines,
                          Matrix4f matrix,
-                         PoseStack.Pose pose,
+                         PoseStack poseStack,
                          int bx, int by, int bz,
                          Vec3 cam,
                          int r, int g, int b, int a, float width) {
@@ -257,20 +259,20 @@ public class TreeTimerRenderer {
         float y1 = (float) (by + 1 - cam.y) + BOX_PADDING;
         float z1 = (float) (bz + 1 - cam.z) + BOX_PADDING;
 
-        segment(lines, matrix, pose, x0, y0, z0, x1, y0, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z0, x1, y0, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z1, x0, y0, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x0, y0, z1, x0, y0, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z0, x1, y0, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z0, x1, y0, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z1, x0, y0, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z1, x0, y0, z0, r, g, b, a, width);
 
-        segment(lines, matrix, pose, x0, y1, z0, x1, y1, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y1, z0, x1, y1, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y1, z1, x0, y1, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x0, y1, z1, x0, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y1, z0, x1, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y1, z0, x1, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y1, z1, x0, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y1, z1, x0, y1, z0, r, g, b, a, width);
 
-        segment(lines, matrix, pose, x0, y0, z0, x0, y1, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z0, x1, y1, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z1, x1, y1, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x0, y0, z1, x0, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z0, x0, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z0, x1, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z1, x1, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z1, x0, y1, z1, r, g, b, a, width);
     }
 
     /**
@@ -280,7 +282,7 @@ public class TreeTimerRenderer {
      */
     private void segment(VertexConsumer lines,
                          Matrix4f matrix,
-                         PoseStack.Pose pose,
+                         PoseStack poseStack,
                          float x1, float y1, float z1,
                          float x2, float y2, float z2,
                          int r, int g, int b, int a, float width) {
@@ -301,6 +303,7 @@ public class TreeTimerRenderer {
             return;
         }
 
+        PoseStack.Pose pose = poseStack.last();
         LINE_WRITER.vertex(lines, matrix, pose, x1, y1, z1, r, g, b, a, nx, ny, nz, width);
         LINE_WRITER.vertex(lines, matrix, pose, x2, y2, z2, r, g, b, a, nx, ny, nz, width);
     }

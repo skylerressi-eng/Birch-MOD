@@ -120,7 +120,7 @@ public class BirchHud implements HudElement {
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.gui.hud.isHidden()) {
+        if (client == null || client.player == null || client.options.hideGui) {
             return;
         }
         if (!SkyblockDetector.shouldRender(config.onlyInSkyblock)) {

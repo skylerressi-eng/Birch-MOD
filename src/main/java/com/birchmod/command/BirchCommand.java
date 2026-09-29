@@ -264,7 +264,7 @@ public final class BirchCommand {
         if (client == null) {
             return;
         }
-        client.execute(() -> client.gui.setScreen(new com.birchmod.gui.BirchScreen(null)));
+        client.execute(() -> client.setScreen(new com.birchmod.gui.BirchScreen(null)));
     }
 
     // ---- Output ----

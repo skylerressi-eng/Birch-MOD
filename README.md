@@ -1,8 +1,11 @@
 # Birch Optimizer
 
-A **Hypixel Skyblock** QOL mod for **Minecraft 26.2** on **Fabric**, built to
+A **Hypixel Skyblock** QOL mod for **Minecraft 26.1.2** on **Fabric**, built to
 optimize birch foraging. Everything tracks itself — there is nothing to start,
 stop, or reset by hand.
+
+A 26.2 build ships too — see [`dist/`](dist/) for both jars and which one to
+take.
 
 ```
 Birch Optimizer
@@ -186,13 +189,16 @@ Everything is settable in-game via `/birch`. The backing file is
 The jar lands in `build/libs/`. Drop it in `.minecraft/mods` alongside
 [Fabric API](https://modrinth.com/mod/fabric-api).
 
-**Toolchain:** Fabric Loader `0.19.5` · Fabric API `0.161.0+26.2` ·
-Loom `1.15.5` (`net.fabricmc.fabric-loom`) · Gradle `9.4.0` · Java 25
+**Toolchain:** Fabric Loader `0.19.3` · Fabric API `0.155.2+26.1.2` ·
+Loom `1.15-SNAPSHOT` (`net.fabricmc.fabric-loom`) · Gradle `9.4.0` · Java 25
+
+The 26.2 line needs a newer toolchain — Loom `1.18.2`, which in turn wants
+Gradle `9.8.0` — and is kept on the `mc26.2-line` tag.
 
 Because 26.1 is unobfuscated, there is no `mappings` line, dependencies use
 plain `implementation` (not `modImplementation`), and `jar` replaces `remapJar`.
 
-## Why 26.2 / Fabric
+## Why 26.1 / Fabric
 
 Hypixel enforces a rolling version window on SkyBlock: since **February 24,
 2026** only the **two most recent major content updates** are allowed, so 1.8.9
@@ -202,7 +208,7 @@ Yarn mappings are retired and mods build against official Mojang names.
 
 ## Notable 26.1 APIs used
 
-Confirmed against the real 26.2 / Fabric API 0.161.0 jars:
+Confirmed against the real 26.1.2 / Fabric API 0.155.2 jars:
 
 | Purpose | API |
 |---------|-----|
@@ -221,22 +227,62 @@ Confirmed against the real 26.2 / Fabric API 0.161.0 jars:
 ```
 src/main/java/com/birchmod/
 ├── BirchMod.java                       # ClientModInitializer entrypoint
+│
 ├── api/BazaarManager.java              # tax-aware multi-product pricing
-├── api/LeaderboardManager.java         # leaderboard rank (10-min poll)
+├── api/CollectionApi.java              # birch collection total (10-min poll)
+│
 ├── command/BirchCommand.java           # /birch …
 ├── command/RouteCommand.java           # /route …
 ├── command/TimerCommand.java           # /timer …
-├── config/BirchConfig.java             # JSON config, clamped on load
+├── command/Help.java                   # the command reference, in the game
+│
+├── config/BirchConfig.java             # JSON config, migrated and clamped
+│
+├── gui/BirchScreen.java                # settings, scrolling + searchable
+├── gui/Chrome.java                     # the frame every screen shares
+├── gui/OverlayTab.java                 # \
+├── gui/TreesTab.java                   #  } the four settings tabs
+├── gui/RouteTab.java                   #  |
+├── gui/AlertsTab.java                  # /
+├── gui/OptionSlider.java               # numeric setting as a slider
+├── gui/RoutesScreen.java               # saved routes: pick, rename, delete
+├── gui/RouteListWidget.java            # one clickable row per route
+├── gui/ImportScreen.java               # paste a route somebody sent you
+│
 ├── hud/BirchHud.java                   # overlay (26.1 render-state pipeline)
 ├── input/Keybinds.java                 # rebindable shortcuts
+│
 ├── render/TracerRenderer.java          # tracers + green centre highlights
 ├── render/TreeTimerRenderer.java       # floating in-world countdowns
+├── render/VertexWriter.java            # writes whatever format the pipeline wants
+│
+├── route/RouteRecorder.java            # records a loop from the trees you fell
+├── route/RecordedRoute.java            # a recorded loop
+├── route/RouteLibrary.java             # saved loops, and how they score
+├── route/RouteFollower.java            # walks a loop in recorded order
+├── route/Advance.java                  # when the green marker moves on
+├── route/TreeSight.java                # resolves a recorded point to a log
+├── route/Stop.java                     # one stop, as renderers see it
+├── route/FreePlanner.java              # planning with no recorded route
 ├── route/RouteBuilder.java             # time-cost route planner
+├── route/RouteOptimizer.java           # compiles recordings into one loop
+├── route/TravelGraph.java              # measured travel times, persisted
+├── route/LapTracker.java               # how long a lap actually takes
+├── route/RouteCodec.java               # route ⇄ shareable string
+├── route/RouteFiles.java               # route ⇄ file on disk
+│
 ├── stats/SessionStats.java             # session + persisted lifetime stats
-├── tracking/BirchTracker.java          # birch/hour via inventory deltas
+│
+├── tracking/BirchTracker.java          # birch/hour over foraging time
 ├── tracking/TreeRegenTracker.java      # automatic per-tree regen timing
-├── tracking/CollectionRankTracker.java # collection leaderboard scanner
+├── tracking/MarkerChoice.java          # which log a marker lands on
+├── tracking/MovementTracker.java       # how fast you actually travel
+├── tracking/LeftoverWatch.java         # warns on a trunk you left standing
+├── tracking/CollectionRankTracker.java # reads rank off the collections screen
+│
 ├── util/HttpUtil.java                  # HTTP GET with retry/backoff
+├── util/SafeFile.java                  # atomic writes, with a fallback copy
+├── util/Guard.java                     # fail-safe wrapper around entry points
 ├── util/Notifier.java                  # action-bar + sound alerts
 └── util/SkyblockDetector.java          # Hypixel / Skyblock detection
 ```

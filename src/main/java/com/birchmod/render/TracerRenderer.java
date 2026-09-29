@@ -14,9 +14,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.network.chat.Style;
-import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
@@ -106,12 +104,6 @@ public class TracerRenderer {
      * each change into a short glide. Frame-rate independent, so it looks the
      * same at 30fps and 200.
      */
-    /**
-     * Ease the marker positions between frames, so the lines do not snap.
-     *
-     * Returns the live smoothing buffer. Callers that keep it past the current
-     * call must copy it — see the call site.
-     */
     private Vec3[] smoothPositions(List<Stop> route) {
         long now = System.nanoTime();
         double deltaSeconds = lastFrameNanos == 0L ? 1.0 / 60.0 : (now - lastFrameNanos) / 1.0e9;
@@ -143,7 +135,7 @@ public class TracerRenderer {
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || client.player == null || client.gui.hud.isHidden()) {
+        if (client == null || client.level == null || client.player == null || client.options.hideGui) {
             return;
         }
 
@@ -158,59 +150,48 @@ public class TracerRenderer {
         // plan further ahead and change nothing you could see.
         List<Stop> route = planned;
 
-        Camera camera = client.gameRenderer.mainCamera();
+        Camera camera = client.gameRenderer.getMainCamera();
         Vec3 cam = camera.position();
         PoseStack poseStack = context.poseStack();
-        SubmitNodeCollector collector = context.submitNodeCollector();
+        MultiBufferSource.BufferSource buffers = context.bufferSource();
+        Matrix4f matrix = poseStack.last().pose();
         float width = lineWidth(config);
-        // A copy, not the smoothing buffer itself. Geometry is submitted as a
-        // callback now and runs after this method has returned, so anything it
-        // reads has to still be what it was: the buffer is a field that the next
-        // frame overwrites in place, and reallocates outright when the number of
-        // stops changes. Under the old fetch-and-flush buffer the drawing all
-        // happened inside this call and sharing it was safe. One small array a
-        // frame is a fair price for lines that are drawn where they were aimed.
-        Vec3[] points = smoothPositions(route).clone();
+        Vec3[] points = smoothPositions(route);
 
         int count = route.size();
-
-        // 26.2 replaced the shared buffer you fetched and flushed yourself with
-        // submitted geometry: you hand over a callback and the renderer decides
-        // when to run it. The pose arrives with the callback rather than being
-        // read off the stack here, which is the point — by the time it runs, the
-        // stack has moved on.
 
         // Solid fill first, so the outline drawn after it reads on top. Only
         // the tree you are actually mining gets one.
         if (config.filledHighlight && FILL_WRITER.supportsFill()) {
-            collector.submitCustomGeometry(poseStack, FILLED, (pose, fill) -> {
-                Matrix4f m = pose.pose();
-                for (Stop stop : route) {
-                    if (stop.order() > FILLED_STOPS) {
-                        continue;
-                    }
-                    int[] rgb = colourFor(stop);
-                    fillBox(fill, m, pose, stop.center(), cam,
-                            rgb[0], rgb[1], rgb[2], FILL_ALPHA, width);
+            VertexConsumer fill = buffers.getBuffer(FILLED);
+            for (Stop stop : route) {
+                if (stop.order() > FILLED_STOPS) {
+                    continue;
                 }
-            });
+                int[] rgb = colourFor(stop);
+                fillBox(fill, matrix, poseStack, stop.center(), cam,
+                        rgb[0], rgb[1], rgb[2], FILL_ALPHA, width);
+            }
+            buffers.endBatch(FILLED);
         }
 
-        collector.submitCustomGeometry(poseStack, LINES, (pose, lines) -> {
-            Matrix4f m = pose.pose();
-            for (Stop stop : route) {
-                int[] rgb = colourFor(stop);
-                double weight = weightOf(stop.order(), count);
-                drawBox(lines, m, pose, stop.center(), cam,
-                        rgb[0], rgb[1], rgb[2], alphaFor(weight, 255), taper(width, weight));
-            }
-            if (config.tracersEnabled) {
-                drawTracers(lines, m, pose, route, points, client, cam, config, width, context);
-            }
-        });
+        VertexConsumer lines = buffers.getBuffer(LINES);
+
+        for (Stop stop : route) {
+            int[] rgb = colourFor(stop);
+            double weight = weightOf(stop.order(), count);
+            drawBox(lines, matrix, poseStack, stop.center(), cam,
+                    rgb[0], rgb[1], rgb[2], alphaFor(weight, 255), taper(width, weight));
+        }
+
+        if (config.tracersEnabled) {
+            drawTracers(lines, matrix, poseStack, route, points, client, cam, config, width, context);
+        }
+
+        buffers.endBatch(LINES);
 
         if (config.showRouteLabels) {
-            drawLabels(collector, poseStack, client, camera, cam, route);
+            drawLabels(buffers, poseStack, client, camera, cam, route);
         }
     }
 
@@ -263,7 +244,7 @@ public class TracerRenderer {
 
     private void drawTracers(VertexConsumer lines,
                              Matrix4f matrix,
-                             PoseStack.Pose pose,
+                             PoseStack poseStack,
                              List<Stop> route,
                              Vec3[] points,
                              Minecraft client,
@@ -280,7 +261,7 @@ public class TracerRenderer {
         Vec3 start = new Vec3(eye.x, eye.y - 0.35, eye.z);
 
         int[] rgb = colourFor(route.get(0));
-        drawLine(lines, matrix, pose, start, points[0], cam,
+        drawLine(lines, matrix, poseStack, start, points[0], cam,
                 rgb[0], rgb[1], rgb[2], 255, width);
 
         if (!config.chainTracers) {
@@ -293,7 +274,7 @@ public class TracerRenderer {
         // obvious and the rest reads as context rather than competing with it.
         for (int i = 0; i < points.length - 1; i++) {
             double weight = weightOf(i + 2, route.size());
-            drawLine(lines, matrix, pose, points[i], points[i + 1], cam,
+            drawLine(lines, matrix, poseStack, points[i], points[i + 1], cam,
                     CHAIN_R, CHAIN_G, CHAIN_B, alphaFor(weight, 190), taper(width, weight));
         }
     }
@@ -309,15 +290,7 @@ public class TracerRenderer {
     // ---- Labels ----
 
     /** Numbered stops with their wait, so the order of the route is legible. */
-    /**
-     * The numbered label floating over each stop.
-     *
-     * Text is submitted like any other feature now rather than drawn into a
-     * font batch, so there is no buffer to flush and the renderer decides when
-     * it happens. The transform still has to be built here, because it is the
-     * billboard rotation that makes the label face the camera.
-     */
-    private void drawLabels(SubmitNodeCollector collector,
+    private void drawLabels(MultiBufferSource.BufferSource buffers,
                             PoseStack poseStack,
                             Minecraft client,
                             Camera camera,
@@ -343,30 +316,24 @@ public class TracerRenderer {
             poseStack.mulPose(camera.rotation());
             poseStack.scale(-TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE);
 
-            collector.submitText(poseStack,
-                    -font.width(label) / 2.0f, 0.0f,
-                    FormattedCharSequence.forward(label, Style.EMPTY),
-                    false,
-                    Font.DisplayMode.SEE_THROUGH,
-                    FULL_BRIGHT,
-                    argb,
-                    0,
-                    0);
+            font.drawInBatch(label, -font.width(label) / 2.0f, 0.0f, argb, false,
+                    poseStack.last().pose(), buffers, Font.DisplayMode.SEE_THROUGH, 0, FULL_BRIGHT);
 
             poseStack.popPose();
         }
+        buffers.endBatch();
     }
 
     // ---- Geometry ----
 
     private void drawLine(VertexConsumer lines,
                           Matrix4f matrix,
-                          PoseStack.Pose pose,
+                          PoseStack poseStack,
                           Vec3 from,
                           Vec3 to,
                           Vec3 cam,
                           int r, int g, int b, int a, float width) {
-        segment(lines, matrix, pose,
+        segment(lines, matrix, poseStack,
                 (float) (from.x - cam.x), (float) (from.y - cam.y), (float) (from.z - cam.z),
                 (float) (to.x - cam.x), (float) (to.y - cam.y), (float) (to.z - cam.z),
                 r, g, b, a, width);
@@ -381,7 +348,7 @@ public class TracerRenderer {
      */
     private void segment(VertexConsumer lines,
                          Matrix4f matrix,
-                         PoseStack.Pose pose,
+                         PoseStack poseStack,
                          float x1, float y1, float z1,
                          float x2, float y2, float z2,
                          int r, int g, int b, int a, float width) {
@@ -400,6 +367,7 @@ public class TracerRenderer {
             return;
         }
 
+        PoseStack.Pose pose = poseStack.last();
         LINE_WRITER.vertex(lines, matrix, pose, x1, y1, z1, r, g, b, a, nx, ny, nz, width);
         LINE_WRITER.vertex(lines, matrix, pose, x2, y2, z2, r, g, b, a, nx, ny, nz, width);
     }
@@ -411,7 +379,7 @@ public class TracerRenderer {
     /** Wireframe cube around a block, drawn as twelve edges. */
     private void drawBox(VertexConsumer lines,
                          Matrix4f matrix,
-                         PoseStack.Pose pose,
+                         PoseStack poseStack,
                          BlockPos pos,
                          Vec3 cam,
                          int r, int g, int b, int a, float width) {
@@ -423,26 +391,26 @@ public class TracerRenderer {
         float z1 = (float) (pos.getZ() + 1 - cam.z) + BOX_PADDING;
 
         // Bottom
-        segment(lines, matrix, pose, x0, y0, z0, x1, y0, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z0, x1, y0, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z1, x0, y0, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x0, y0, z1, x0, y0, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z0, x1, y0, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z0, x1, y0, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z1, x0, y0, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z1, x0, y0, z0, r, g, b, a, width);
         // Top
-        segment(lines, matrix, pose, x0, y1, z0, x1, y1, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y1, z0, x1, y1, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y1, z1, x0, y1, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x0, y1, z1, x0, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y1, z0, x1, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y1, z0, x1, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y1, z1, x0, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y1, z1, x0, y1, z0, r, g, b, a, width);
         // Verticals
-        segment(lines, matrix, pose, x0, y0, z0, x0, y1, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z0, x1, y1, z0, r, g, b, a, width);
-        segment(lines, matrix, pose, x1, y0, z1, x1, y1, z1, r, g, b, a, width);
-        segment(lines, matrix, pose, x0, y0, z1, x0, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z0, x0, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z0, x1, y1, z0, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x1, y0, z1, x1, y1, z1, r, g, b, a, width);
+        segment(lines, matrix, poseStack, x0, y0, z1, x0, y1, z1, r, g, b, a, width);
     }
 
     /** Solid translucent cube, so the block to mine reads at a glance. */
     private void fillBox(VertexConsumer fill,
                          Matrix4f matrix,
-                         PoseStack.Pose pose,
+                         PoseStack poseStack,
                          BlockPos pos,
                          Vec3 cam,
                          int r, int g, int b, int a, float width) {
@@ -457,6 +425,7 @@ public class TracerRenderer {
             return;
         }
 
+        PoseStack.Pose pose = poseStack.last();
 
         // Down / up
         face(fill, matrix, pose, x0, y0, z1, x1, y0, z1, x1, y0, z0, x0, y0, z0, 0, -1, 0, r, g, b, a, width);

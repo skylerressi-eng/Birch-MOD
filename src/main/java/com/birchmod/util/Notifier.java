@@ -49,7 +49,7 @@ public final class Notifier {
         if (client == null || client.gui == null) {
             return;
         }
-        client.gui.hud.setOverlayMessage(Component.literal(message), false);
+        client.gui.setOverlayMessage(Component.literal(message), false);
     }
 
     /** Send a message to chat, prefixed with the mod name. */
@@ -58,7 +58,7 @@ public final class Notifier {
         if (client == null || client.gui == null) {
             return;
         }
-        client.gui.hud.getChat().addClientSystemMessage(
+        client.gui.getChat().addClientSystemMessage(
                 Component.literal("§6[Birch] §r" + message));
     }
 

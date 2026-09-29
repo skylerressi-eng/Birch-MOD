@@ -341,7 +341,7 @@ public final class BirchScreen extends Screen {
     /** Tabs four and under are grids here; the fifth is a screen of its own. */
     private void openTab(int index) {
         if (index == ROUTES_TAB) {
-            minecraft.gui.setScreen(new RoutesScreen(parent));
+            minecraft.setScreen(new RoutesScreen(parent));
             return;
         }
         if (index == activeTab) {
@@ -426,7 +426,7 @@ public final class BirchScreen extends Screen {
     public void onClose() {
         BirchConfig.save();
         if (minecraft != null) {
-            minecraft.gui.setScreen(parent);
+            minecraft.setScreen(parent);
         }
     }
 
