@@ -67,7 +67,7 @@ public final class Keybinds {
         }
 
         while (openSettings != null && openSettings.consumeClick()) {
-            client.setScreen(new com.birchmod.gui.BirchScreen(null));
+            client.gui.setScreen(new com.birchmod.gui.BirchScreen(null));
         }
 
         while (resetSession != null && resetSession.consumeClick()) {

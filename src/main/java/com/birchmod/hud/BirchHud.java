@@ -26,7 +26,7 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Renders the Birch Optimizer overlay.
  *
- * On Minecraft 26.1 the HUD is a render-state pipeline, so this implements
+ * Since Minecraft 26.1 the HUD is a render-state pipeline, so this implements
  * {@link HudElement#extractRenderState} rather than an immediate-mode callback.
  */
 public class BirchHud implements HudElement {
@@ -120,7 +120,7 @@ public class BirchHud implements HudElement {
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.options.hideGui) {
+        if (client == null || client.player == null || client.gui.hud.isHidden()) {
             return;
         }
         if (!SkyblockDetector.shouldRender(config.onlyInSkyblock)) {

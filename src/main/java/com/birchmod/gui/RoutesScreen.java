@@ -160,7 +160,7 @@ public class RoutesScreen extends Screen {
         int footerY = Chrome.footerY(height);
         addRenderableWidget(new BarkButton(Chrome.MARGIN, footerY, 130, BUTTON_HEIGHT,
                 Component.literal("Import a route…"),
-                b -> minecraft.setScreen(new ImportScreen(this))));
+                b -> minecraft.gui.setScreen(new ImportScreen(this))));
 
         addRenderableWidget(new BarkButton(width - Chrome.MARGIN - 90, footerY, 90,
                 BUTTON_HEIGHT, Component.literal("Done"), b -> onClose()));
@@ -172,7 +172,7 @@ public class RoutesScreen extends Screen {
         if (index == TAB_INDEX) {
             return;
         }
-        minecraft.setScreen(new BirchScreen(parent, index));
+        minecraft.gui.setScreen(new BirchScreen(parent, index));
     }
 
     @Override
@@ -405,7 +405,7 @@ public class RoutesScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(parent);
+        minecraft.gui.setScreen(parent);
     }
 
     @Override

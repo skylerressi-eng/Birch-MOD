@@ -1,6 +1,6 @@
 # Birch Optimizer
 
-A **Hypixel Skyblock** QOL mod for **Minecraft 26.1.2** on **Fabric**, built to
+A **Hypixel Skyblock** QOL mod for **Minecraft 26.2** on **Fabric**, built to
 optimize birch foraging. Everything tracks itself — there is nothing to start,
 stop, or reset by hand.
 
@@ -186,13 +186,13 @@ Everything is settable in-game via `/birch`. The backing file is
 The jar lands in `build/libs/`. Drop it in `.minecraft/mods` alongside
 [Fabric API](https://modrinth.com/mod/fabric-api).
 
-**Toolchain:** Fabric Loader `0.19.3` · Fabric API `0.155.2+26.1.2` ·
+**Toolchain:** Fabric Loader `0.19.5` · Fabric API `0.161.0+26.2` ·
 Loom `1.15.5` (`net.fabricmc.fabric-loom`) · Gradle `9.4.0` · Java 25
 
 Because 26.1 is unobfuscated, there is no `mappings` line, dependencies use
 plain `implementation` (not `modImplementation`), and `jar` replaces `remapJar`.
 
-## Why 26.1.2 / Fabric
+## Why 26.2 / Fabric
 
 Hypixel enforces a rolling version window on SkyBlock: since **February 24,
 2026** only the **two most recent major content updates** are allowed, so 1.8.9
@@ -202,7 +202,7 @@ Yarn mappings are retired and mods build against official Mojang names.
 
 ## Notable 26.1 APIs used
 
-Confirmed against the real 26.1.2 / Fabric API 0.155.2 jars:
+Confirmed against the real 26.2 / Fabric API 0.161.0 jars:
 
 | Purpose | API |
 |---------|-----|

@@ -1,11 +1,11 @@
 plugins {
     // Minecraft 26.1+ is unobfuscated, so this is the new non-remapping Loom.
-    id 'net.fabricmc.fabric-loom' version '1.15-SNAPSHOT'
+    id 'net.fabricmc.fabric-loom' version '1.18.2'
     id 'java'
 }
 
 // ---------------------------------------------------------------------------
-// Birch Optimizer — a Hypixel Skyblock QOL mod for Minecraft 26.1.2 (Fabric).
+// Birch Optimizer — a Hypixel Skyblock QOL mod for Minecraft 26.2 (Fabric).
 //
 // NOTE: Minecraft 26.1+ requires Java 25 as the minimum Gradle JVM.
 // ---------------------------------------------------------------------------

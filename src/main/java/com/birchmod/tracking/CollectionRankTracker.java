@@ -65,7 +65,7 @@ public class CollectionRankTracker {
             return;
         }
 
-        Screen screen = client.screen;
+        Screen screen = client.gui.screen();
         if (screen != lastScreen) {
             // New screen: allow a fresh capture.
             lastScreen = screen;

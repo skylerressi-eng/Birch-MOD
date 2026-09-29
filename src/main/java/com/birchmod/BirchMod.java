@@ -38,7 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Birch Optimizer — Fabric client mod for Hypixel Skyblock on Minecraft 26.1.2.
+ * Birch Optimizer — Fabric client mod for Hypixel Skyblock on Minecraft 26.2.
  *
  * Features:
  *  - Birch/hour, measured from inventory deltas (works on a remote server).
@@ -61,6 +61,20 @@ public class BirchMod implements ClientModInitializer {
                 .orElse("unknown");
     }
 
+    /**
+     * The Minecraft version actually running.
+     *
+     * Asked rather than written down. It was written down, in a log line and in
+     * {@code /birch diag}, and both still said 26.1.2 after the mod had been
+     * retargeted — which is worse than saying nothing, because the one place
+     * somebody looks to check what they are running was confidently wrong.
+     */
+    public static String minecraftVersion() {
+        return FabricLoader.getInstance().getModContainer("minecraft")
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("unknown");
+    }
+
     public static BirchTracker tracker;
     public static TreeRegenTracker regenTracker;
     public static CollectionRankTracker collectionRank;
@@ -76,7 +90,7 @@ public class BirchMod implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        LOGGER.info("Birch Optimizer {} starting for Minecraft 26.1.2", version());
+        LOGGER.info("Birch Optimizer {} starting for Minecraft {}", version(), minecraftVersion());
 
         BirchConfig.load();
         SessionStats.load();

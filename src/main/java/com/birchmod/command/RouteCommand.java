@@ -201,7 +201,7 @@ public final class RouteCommand {
                 .then(ClientCommands.literal("gui").executes(ctx -> {
                     net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
                     if (client != null) {
-                        client.execute(() -> client.setScreen(new com.birchmod.gui.BirchScreen(null)));
+                        client.execute(() -> client.gui.setScreen(new com.birchmod.gui.BirchScreen(null)));
                     }
                     return 1;
                 }))

@@ -1,9 +1,10 @@
 package com.birchmod.render;
 
+import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.blaze3d.vertex.VertexFormatElement;
 
 import net.minecraft.client.renderer.rendertype.RenderType;
 
@@ -21,13 +22,21 @@ import org.joml.Matrix4f;
  * {@code POSITION_COLOR_NORMAL_LINE_WIDTH} and the old code never set the
  * width.
  *
- * So nothing here is assumed. The format and draw mode are read from the
- * pipeline at construction, each element is written only if the format declares
- * it, and anything unrecognised simply is not drawn.
+ * So nothing here is assumed. The format and topology are read off the render
+ * type, each element is written only if the format declares it, and anything
+ * unrecognised simply is not drawn.
+ *
+ * <h2>26.2</h2>
+ * The format now comes straight off the render type rather than out of its
+ * pipeline, draw mode became {@link PrimitiveTopology}, and elements are asked
+ * for by their semantic name instead of by a constant — {@code VertexFormat}
+ * holds a list of records now, so there is nothing to compare against. The
+ * names are Mojang's own, from {@link DefaultVertexFormat}, rather than string
+ * literals of my own invention.
  */
 public final class VertexWriter {
 
-    private final VertexFormat.Mode mode;
+    private final PrimitiveTopology topology;
 
     private final boolean hasColor;
     private final boolean hasNormal;
@@ -38,36 +47,49 @@ public final class VertexWriter {
 
     public VertexWriter(RenderType type) {
         VertexFormat format = null;
-        VertexFormat.Mode resolvedMode = null;
+        PrimitiveTopology resolved = null;
         try {
-            format = type.pipeline().getVertexFormat();
-            resolvedMode = type.pipeline().getVertexFormatMode();
+            format = type.format();
+            resolved = type.primitiveTopology();
         } catch (Throwable ignored) {
             // Fall through to the unusable state below.
         }
 
-        this.mode = resolvedMode;
-        this.usable = format != null && resolvedMode != null;
-        this.hasColor = usable && format.contains(VertexFormatElement.COLOR);
-        this.hasNormal = usable && format.contains(VertexFormatElement.NORMAL);
-        this.hasLineWidth = usable && format.contains(VertexFormatElement.LINE_WIDTH);
-        this.hasUv0 = usable && format.contains(VertexFormatElement.UV0);
-        this.hasUv2 = usable && format.contains(VertexFormatElement.UV2);
+        this.topology = resolved;
+        this.usable = format != null && resolved != null;
+        this.hasColor = declares(format, DefaultVertexFormat.COLOR_SEMANTIC_NAME);
+        this.hasNormal = declares(format, DefaultVertexFormat.NORMAL_SEMANTIC_NAME);
+        this.hasLineWidth = declares(format, DefaultVertexFormat.LINE_WIDTH_SEMANTIC_NAME);
+        this.hasUv0 = declares(format, DefaultVertexFormat.UV0_SEMANTIC_NAME);
+        this.hasUv2 = declares(format, DefaultVertexFormat.UV2_SEMANTIC_NAME);
     }
 
-    /** False when the pipeline could not be inspected; callers must not draw. */
+    private static boolean declares(VertexFormat format, String semanticName) {
+        if (format == null) {
+            return false;
+        }
+        try {
+            return format.contains(semanticName);
+        } catch (Throwable ignored) {
+            // A format that will not answer is one we do not write to.
+            return false;
+        }
+    }
+
+    /** False when the format could not be inspected; callers must not draw. */
     public boolean isUsable() {
         return usable;
     }
 
     /** Whether this render type draws solid geometry we know how to emit. */
     public boolean supportsFill() {
-        return usable && (mode == VertexFormat.Mode.QUADS || mode == VertexFormat.Mode.TRIANGLES);
+        return usable
+                && (topology == PrimitiveTopology.QUADS || topology == PrimitiveTopology.TRIANGLES);
     }
 
     /** Quads need four vertices per face, triangles need six. */
     public boolean isQuads() {
-        return mode == VertexFormat.Mode.QUADS;
+        return topology == PrimitiveTopology.QUADS;
     }
 
     /**

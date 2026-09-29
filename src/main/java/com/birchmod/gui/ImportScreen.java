@@ -74,7 +74,7 @@ public class ImportScreen extends Screen {
         int footerY = Chrome.footerY(height);
 
         addRenderableWidget(new BarkButton(Chrome.MARGIN, footerY, 70, BUTTON_HEIGHT,
-                Component.literal("Back"), b -> minecraft.setScreen(parent)));
+                Component.literal("Back"), b -> minecraft.gui.setScreen(parent)));
 
         BarkButton refresh = addRenderableWidget(new BarkButton(Chrome.MARGIN + 76, footerY,
                 70, BUTTON_HEIGHT, Component.literal("Refresh"), b -> {
@@ -134,7 +134,7 @@ public class ImportScreen extends Screen {
             Notifier.chat("§8You already had a §f" + wanted + "§8, so this is §f"
                     + route.name + "§8.");
         }
-        minecraft.setScreen(parent);
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
@@ -155,7 +155,7 @@ public class ImportScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(parent);
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
