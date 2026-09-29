@@ -14,6 +14,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
@@ -176,13 +177,9 @@ public final class BirchScreen extends Screen {
         // Search keeps its text across a rebuild, so typing and then toggling
         // something does not throw away what was typed.
         String previous = needle;
-        search = new EditBox(font, Chrome.MARGIN + 5, Chrome.CONTENT_TOP + 5,
-                width - Chrome.MARGIN * 2 - 12, SEARCH_HEIGHT - 6,
+        search = new EditBox(font, Chrome.MARGIN, Chrome.CONTENT_TOP,
+                width - Chrome.MARGIN * 2, SEARCH_HEIGHT,
                 Component.literal("Search settings"));
-        // Vanilla draws a grey box with a hard border, which on wood looks like
-        // a sticker. The groove behind it is drawn with the rest of the panel.
-        search.setBordered(false);
-        search.setTextColor(Chrome.TEXT);
         search.setHint(Component.literal("Search settings…"));
         search.setMaxLength(48);
         search.setValue(previous);
@@ -193,8 +190,8 @@ public final class BirchScreen extends Screen {
         });
         addRenderableWidget(search);
 
-        addRenderableWidget(new BarkButton(width - Chrome.MARGIN - 80,
-                Chrome.footerY(height), 80, 20, Component.literal("Done"), b -> onClose()));
+        addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
+                .bounds(width - Chrome.MARGIN - 80, Chrome.footerY(height), 80, 20).build());
 
         layout();
     }
@@ -377,10 +374,9 @@ public final class BirchScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partial) {
+        // The same translucent backdrop every other screen in the game uses.
+        extractTransparentBackground(graphics);
         Chrome.background(graphics, font, width, height, activeTab);
-        // The groove the search box sits in, drawn before the box itself.
-        Chrome.groove(graphics, Chrome.MARGIN, Chrome.CONTENT_TOP,
-                width - Chrome.MARGIN * 2, SEARCH_HEIGHT);
         super.extractRenderState(graphics, mouseX, mouseY, partial);
 
         int top = listTop();
@@ -400,8 +396,12 @@ public final class BirchScreen extends Screen {
             if (!p.widget().visible) {
                 continue;
             }
-            // No wash behind the control: bark lights its own edge on hover, and
-            // two highlights saying the same thing read as a rendering fault.
+            int y = p.widget().getY();
+            if (mouseX >= p.x() && mouseX < p.x() + p.widget().getWidth()
+                    && mouseY >= y && mouseY < y + WIDGET_HEIGHT) {
+                Chrome.hoverRow(graphics, p.x() - 3, y - 2,
+                        p.x() + p.widget().getWidth() + 3, y + WIDGET_HEIGHT + 2);
+            }
             p.widget().extractRenderState(graphics, mouseX, mouseY, partial);
         }
 
@@ -449,14 +449,16 @@ public final class BirchScreen extends Screen {
                               java.util.function.BooleanSupplier get,
                               java.util.function.Consumer<Boolean> set) {
         return new Item(null, label, tooltip, () -> {
-            BarkToggle toggle = new BarkToggle(label, get, value -> {
-                set.accept(value);
-                BirchConfig.saveThrottled();
-            });
+            CycleButton<Boolean> button = CycleButton.onOffBuilder(get.getAsBoolean())
+                    .create(0, 0, 150, WIDGET_HEIGHT, Component.literal(label),
+                            (widget, value) -> {
+                                set.accept(value);
+                                BirchConfig.saveThrottled();
+                            });
             if (tooltip != null) {
-                toggle.setTooltip(Tooltip.create(Component.literal(tooltip)));
+                button.setTooltip(Tooltip.create(Component.literal(tooltip)));
             }
-            return toggle;
+            return button;
         });
     }
 
@@ -465,7 +467,7 @@ public final class BirchScreen extends Screen {
                               double min, double max, double step,
                               DoubleSupplier get, DoubleConsumer set) {
         return new Item(null, label, tooltip, () -> {
-            BarkSlider s = new BarkSlider(label, min, max, step, get.getAsDouble(), value -> {
+            OptionSlider s = new OptionSlider(label, min, max, step, get.getAsDouble(), value -> {
                 set.accept(value);
                 // Dragging calls back on every mouse movement; a full save per
                 // movement is a stutter you can feel. Closing the screen
@@ -482,8 +484,9 @@ public final class BirchScreen extends Screen {
     /** A plain button that runs something. */
     public static Item action(String label, String tooltip, Runnable onPress) {
         return new Item(null, label, tooltip, () -> {
-            BarkButton button = new BarkButton(0, 0, 150, WIDGET_HEIGHT,
-                    Component.literal(label), Chrome.safely("action", onPress));
+            Button button = Button.builder(Component.literal(label),
+                            Chrome.safely("action", onPress))
+                    .bounds(0, 0, 150, WIDGET_HEIGHT).build();
             if (tooltip != null) {
                 button.setTooltip(Tooltip.create(Component.literal(tooltip)));
             }

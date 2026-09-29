@@ -53,7 +53,14 @@ import net.minecraft.world.level.block.state.BlockState;
  */
 public class TreeRegenTracker {
 
-    private static final int MAX_TREES = 48;
+    /**
+     * Trees held at once.
+     *
+     * Has to cover a whole recorded loop — up to 32 stops shown, and more
+     * recorded — plus the scenery standing between them, or route stops start
+     * losing their slot to trees you were never going to.
+     */
+    private static final int MAX_TREES = 96;
 
     /** Fast pass: detect chop/regrow transitions. */
     private static final int UPDATE_INTERVAL_TICKS = 4; // 5x per second
@@ -542,9 +549,6 @@ public class TreeRegenTracker {
      * sweep into a frame stall.
      */
     private void discoverNearbyTrees(Minecraft client) {
-        if (trees.size() >= MAX_TREES) {
-            return;
-        }
         BlockPos origin = client.player.blockPosition();
         int radius = footprintRadius();
         int added = 0;
@@ -577,9 +581,25 @@ public class TreeRegenTracker {
                     // like decoration until you swing at it.
                     // The cheap test first: six block reads, against a scan of
                     // every route stop and every tree ever felled.
+                    boolean known = isKnownSpot(x, y, z);
                     if (!isHarvestable(sampler, x, y, z, BirchConfig.get().minTreeLogs)
-                            && !isKnownSpot(x, y, z)) {
+                            && !known) {
                         continue;
+                    }
+
+                    // A full table used to end the sweep outright, which meant
+                    // the trees held were simply whichever this spatial sweep
+                    // reached first — and a stop on your own route that lost
+                    // that race was never tracked at all. An untracked stop
+                    // reports "wood left: unknown", which the follower has to
+                    // read as somewhere to go, so the route would not advance
+                    // off it, its marker stayed green after it was felled, and
+                    // chopping it was never credited to the recording. Somewhere
+                    // you actually work outranks scenery for a slot.
+                    if (trees.size() >= MAX_TREES) {
+                        if (!known || !evictFurthest(origin)) {
+                            return;
+                        }
                     }
 
                     // The base column already belongs to a tree, so this is a
@@ -600,6 +620,39 @@ public class TreeRegenTracker {
                 }
             }
         }
+    }
+
+    /**
+     * Drop the furthest tree to make room, unless every one of them matters.
+     *
+     * The focus set — the stops the route is pointing at right now — is never
+     * evicted, because those are the ones whose markers have to keep up with
+     * the wood. Anything else is fair game: a tree dropped here is rediscovered
+     * by the next sweep if it is still worth holding.
+     */
+    private boolean evictFurthest(BlockPos playerBase) {
+        Set<BlockPos> focused = focus;
+        BlockPos worst = null;
+        double worstDistSq = -1.0;
+
+        for (Tree tree : trees.values()) {
+            if (focused.contains(tree.base)) {
+                continue;
+            }
+            double distSq = tree.base.distSqr(playerBase);
+            if (distSq > worstDistSq) {
+                worstDistSq = distSq;
+                worst = tree.base;
+            }
+        }
+        if (worst == null) {
+            return false;
+        }
+        Tree evicted = trees.remove(worst);
+        if (evicted != null) {
+            releaseColumns(evicted);
+        }
+        return true;
     }
 
     /**

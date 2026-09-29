@@ -40,7 +40,7 @@ public class ImportScreen extends Screen {
 
     private final Screen parent;
     private SourceList list;
-    private BarkButton importButton;
+    private Button importButton;
 
     public ImportScreen(Screen parent) {
         super(Component.literal("Import a route"));
@@ -73,21 +73,21 @@ public class ImportScreen extends Screen {
 
         int footerY = Chrome.footerY(height);
 
-        addRenderableWidget(new BarkButton(Chrome.MARGIN, footerY, 70, BUTTON_HEIGHT,
-                Component.literal("Back"), b -> minecraft.gui.setScreen(parent)));
+        addRenderableWidget(Button.builder(Component.literal("Back"),
+                        b -> minecraft.gui.setScreen(parent))
+                .bounds(Chrome.MARGIN, footerY, 70, BUTTON_HEIGHT).build());
 
-        BarkButton refresh = addRenderableWidget(new BarkButton(Chrome.MARGIN + 76, footerY,
-                70, BUTTON_HEIGHT, Component.literal("Refresh"), b -> {
-                    list.reload();
-                    updateButtons();
-                }));
+        Button refresh = addRenderableWidget(Button.builder(Component.literal("Refresh"), b -> {
+            list.reload();
+            updateButtons();
+        }).bounds(Chrome.MARGIN + 76, footerY, 70, BUTTON_HEIGHT).build());
         refresh.setTooltip(Tooltip.create(Component.literal(
                 "Look at the folder and the clipboard again — use this after "
                         + "dropping a file in or copying a code.")));
 
-        importButton = addRenderableWidget(new BarkButton(width - Chrome.MARGIN - 110,
-                footerY, 110, BUTTON_HEIGHT, Component.literal("Import"),
-                b -> importSelected()));
+        importButton = addRenderableWidget(Button.builder(Component.literal("Import"),
+                        b -> importSelected())
+                .bounds(width - Chrome.MARGIN - 110, footerY, 110, BUTTON_HEIGHT).build());
         importButton.setTooltip(Tooltip.create(Component.literal(
                 "Add this route to your own. Nothing you have is overwritten.")));
 
@@ -139,6 +139,7 @@ public class ImportScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partial) {
+        extractTransparentBackground(graphics);
         Chrome.background(graphics, font, width, height, Chrome.NO_TAB);
         super.extractRenderState(graphics, mouseX, mouseY, partial);
 
@@ -183,29 +184,13 @@ public class ImportScreen extends Screen {
         @Override
         public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
                                    boolean hovered, float partial) {
-            boolean picked = list != null && list.getSelected() == this;
-            int rowX = getContentX() - 2;
-            int rowW = getContentWidth() + 4;
-
-            if (picked) {
-                BirchSkin.bark(graphics, rowX, getContentY() - 1, rowW, getContentHeight(),
-                        BirchSkin.seedFor(label), BirchSkin.State.IDLE);
-            } else if (hovered) {
-                Chrome.hoverRow(graphics, rowX, getContentY() - 1,
-                        rowX + rowW, getContentY() - 1 + getContentHeight());
-            }
-
-            int ink = picked ? BirchSkin.INK : Chrome.TEXT;
-            int inkDim = picked ? BirchSkin.INK_SOFT : Chrome.TEXT_DIM;
             int x = getContentX() + 4;
             int y = getContentY() + 2;
-            int room = getContentWidth() - 8;
 
-            graphics.text(minecraft.font, BarkButton.fit(minecraft.font, label, room),
-                    x, y, problem == null ? ink : inkDim, false);
-            graphics.text(minecraft.font,
-                    BarkButton.fit(minecraft.font, problem == null ? detail : problem, room),
-                    x, y + 11, problem == null ? inkDim : Chrome.TEXT_RED, false);
+            graphics.text(minecraft.font, label, x, y,
+                    problem == null ? Chrome.TEXT : Chrome.TEXT_DIM, false);
+            graphics.text(minecraft.font, problem == null ? detail : problem, x, y + 11,
+                    problem == null ? Chrome.TEXT_DIM : Chrome.TEXT_RED, false);
         }
 
         @Override
@@ -225,16 +210,6 @@ public class ImportScreen extends Screen {
         @Override
         public int getRowWidth() {
             return getWidth() - 12;
-        }
-
-        /** Same plank the routes list sits on, so the two screens match. */
-        @Override
-        protected void extractListBackground(GuiGraphicsExtractor graphics) {
-            BirchSkin.plank(graphics, getX(), getY(), getWidth(), getHeight(), 0x11B0 ^ getX());
-        }
-
-        @Override
-        protected void extractListSeparators(GuiGraphicsExtractor graphics) {
         }
 
         void reload() {
