@@ -37,9 +37,16 @@ final class TreeSight {
     private TreeSight() {
     }
 
-    /** A recorded stop, resolved against the world as it stands right now. */
+    /**
+     * A recorded stop, resolved against the world as it stands right now.
+     *
+     * @param center      where the marker goes, when that is already known
+     * @param markerKnown false when {@link #center} is only the recorded
+     *                    coordinate and the real log has still to be found by
+     *                    reading the world
+     */
     record Live(BlockPos base, TreeRegenTracker.Tree tree, BlockPos center,
-                int woodLeft, double readySeconds) {
+                int woodLeft, double readySeconds, boolean markerKnown) {
 
         /** Somewhere to go: wood standing, or a tree we have not seen yet. */
         boolean hasWood() {
@@ -55,9 +62,24 @@ final class TreeSight {
      * Resolve one recorded point.
      *
      * A tracked tree answers everything: which of its logs to mark, how much
-     * wood is left, and how long until it is back. An untracked one is read
-     * straight out of the world if its chunk is loaded, and otherwise left at
-     * the coordinate that was recorded — never displaced upward on a guess.
+     * wood is left, and how long until it is back. An untracked one keeps the
+     * coordinate that was recorded — never displaced upward on a guess — and is
+     * flagged as needing a world read before anything draws it.
+     *
+     * <h2>Why the world read is not done here</h2>
+     * Finding the right log by reading the world is a scan of the trunk's whole
+     * footprint: up to a few hundred block lookups for one stop. This is called
+     * for <em>every</em> point on the recorded route, two and a half times a
+     * second, while the route only ever draws a few stops ahead — so on a long
+     * loop almost all of that work was being done for markers nobody was going
+     * to see. A 512-stop recording, which the recorder will happily make, came
+     * to the better part of half a million block lookups a second to position
+     * thirty-six markers.
+     *
+     * The decisions this feeds — whether a stop has wood, how long until it is
+     * back, which stop is next — do not use the marker position at all. So it
+     * is left to {@link #marker}, which the follower calls only for the stops it
+     * actually emits.
      */
     static Live resolve(TreeRegenTracker tracker, int x, int y, int z) {
         BlockPos recorded = new BlockPos(x, y, z);
@@ -69,22 +91,33 @@ final class TreeSight {
         // unexamined tree is treated exactly like one out of range: somewhere
         // to go, with its marker read from the world.
         if (tree != null && !tree.isProbed()) {
-            return new Live(tree.base, tree, readWorld(tree.base), -1, 0.0);
+            return new Live(tree.base, tree, tree.base, -1, 0.0, false);
         }
 
         if (tree != null) {
             int wood = tree.getWoodCount();
             if (wood > 0) {
-                return new Live(tree.base, tree, tree.getTarget(), wood, 0.0);
+                return new Live(tree.base, tree, tree.getTarget(), wood, 0.0, true);
             }
             double ready = tree.isDowned()
                     ? Math.max(0.0, tracker.getSecondsUntilRegen(tree))
                     : 0.0;
             // Nothing standing: mark the base, which is where it comes back.
-            return new Live(tree.base, tree, tree.base, 0, ready);
+            return new Live(tree.base, tree, tree.base, 0, ready, true);
         }
 
-        return new Live(recorded, null, readWorld(recorded), -1, 0.0);
+        return new Live(recorded, null, recorded, -1, 0.0, false);
+    }
+
+    /**
+     * Where this stop's marker belongs, reading the world if it has to.
+     *
+     * Called once per stop that is actually going to be drawn, which is what
+     * keeps the footprint scan off the hot path. The answer is the same one
+     * {@link #resolve} used to compute eagerly.
+     */
+    static BlockPos marker(Live live) {
+        return live.markerKnown() ? live.center() : readWorld(live.base());
     }
 
     /**

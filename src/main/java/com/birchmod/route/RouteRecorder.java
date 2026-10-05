@@ -50,7 +50,6 @@ public final class RouteRecorder {
     public void onTreeChopped(BlockPos base) {
         String routeName;
         int count;
-        boolean justFilled = false;
 
         synchronized (this) {
             if (recording == null || base == null) {

@@ -131,12 +131,7 @@ public final class RouteCodec {
                     + PREFIX.substring(0, PREFIX.length() - 1) + ".");
         }
 
-        byte[] compressed;
-        try {
-            compressed = Base64.getUrlDecoder().decode(trimmed.substring(PREFIX.length()));
-        } catch (IllegalArgumentException e) {
-            throw new CodecException("That code is damaged — it may have been cut short.");
-        }
+        byte[] compressed = base64(trimmed.substring(PREFIX.length()));
 
         String json = inflate(compressed);
         Payload payload;
@@ -170,6 +165,45 @@ public final class RouteCodec {
                     + " distinct stop(s); " + RouteLibrary.MIN_STOPS + " are needed.");
         }
         return route;
+    }
+
+    /**
+     * The payload's bytes, forgiving everything a trip through chat does to it.
+     *
+     * A share code is copied out of Discord, a wiki, a forum post or a chat
+     * line, and all four of those wrap long strings. The wrap arrives as a
+     * newline or a run of spaces in the middle of the code, which decoded as
+     * damage — so a code that was entirely intact was refused with "it may have
+     * been cut short", and the person pasting it had no way to tell the
+     * difference between that and a code that really was truncated.
+     *
+     * Whitespace is therefore dropped rather than rejected, and both Base64
+     * alphabets are accepted: the mod writes the URL-safe one, but anything
+     * that round-trips a code through a tool of its own may hand back the
+     * standard {@code +/} form, and the bytes underneath are the same either
+     * way.
+     */
+    static byte[] base64(String payload) throws CodecException {
+        StringBuilder packed = new StringBuilder(payload.length());
+        for (int i = 0; i < payload.length(); i++) {
+            char c = payload.charAt(i);
+            if (!Character.isWhitespace(c)) {
+                packed.append(c);
+            }
+        }
+        String bare = packed.toString();
+        if (bare.isEmpty()) {
+            throw new CodecException("That code has no route in it.");
+        }
+        try {
+            return Base64.getUrlDecoder().decode(bare);
+        } catch (IllegalArgumentException urlFailed) {
+            try {
+                return Base64.getMimeDecoder().decode(bare);
+            } catch (IllegalArgumentException e) {
+                throw new CodecException("That code is damaged — it may have been cut short.");
+            }
+        }
     }
 
     /**

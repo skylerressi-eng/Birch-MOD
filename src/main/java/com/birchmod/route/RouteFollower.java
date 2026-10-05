@@ -101,7 +101,7 @@ public final class RouteFollower {
         double[] cost = new double[live.length];
         for (int i = 0; i < live.length; i++) {
             cost[i] = Math.max(
-                    TreeSight.approachSeconds(playerPos, live[i].center()),
+                    TreeSight.approachSeconds(playerPos, live[i].base()),
                     live[i].readySeconds());
         }
         return cost;
@@ -120,7 +120,9 @@ public final class RouteFollower {
                 || !Objects.equals(recorded.name, routeName);
 
         if (!lost) {
-            Vec3 held = Vec3.atCenterOf(live[index].center());
+            // The base, not the marker: the marker may not be resolved yet, and
+            // a couple of blocks either way is nothing against this threshold.
+            Vec3 held = Vec3.atCenterOf(live[index].base());
             lost = playerPos.distanceTo(held) > REJOIN_DISTANCE;
         }
 
@@ -159,12 +161,15 @@ public final class RouteFollower {
             shown.add(current.base());
 
             double travel = previous == null
-                    ? TreeSight.approachSeconds(playerPos, current.center())
+                    ? TreeSight.approachSeconds(playerPos, current.base())
                     : TreeSight.travelSeconds(previous, current.base());
 
             double arrival = Math.max(clock + travel, current.readySeconds());
 
-            stops.add(new Stop(current.tree(), current.base(), current.center(),
+            // The marker is resolved here rather than when the stop was looked
+            // up, because finding the right log means scanning the trunk's
+            // footprint and only the stops that get emitted are ever drawn.
+            stops.add(new Stop(current.tree(), current.base(), TreeSight.marker(current),
                     Math.max(0.0, arrival), order++, current.woodLeft(), current.unfinished()));
             previous = current.base();
             clock = arrival;

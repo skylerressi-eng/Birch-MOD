@@ -16,6 +16,7 @@ Regen: 12.4s (3 trees)
 Session: 4,203 birch / 61 trees
 Earned: 22,410 in 34m 12s
 Collection: #142 (Birch Collection)
+Tier 7/9: 1,520 to go (14m)
 ```
 
 In the world, every downed tree carries its own countdown:
@@ -30,16 +31,22 @@ In the world, every downed tree carries its own countdown:
 
 | | |
 |---|---|
-| **Birch/hour** | Rolling 1-hour rate from inventory deltas |
+| **Birch/hour** | Measured over time spent foraging, not time logged in |
 | **Tax-aware coins/hour** | Real income after Hypixel's Bazaar cut |
-| **Best payout routing** | Compares raw vs. enchanted birch per log |
+| **Best payout routing** | Compares raw vs. enchanted birch per log, and says which |
+| **Collection tier** | Which tier, how much is left, and how long that will take |
 | **Automatic tree timers** | Every tree in range tracked, no setup |
 | **Self-calibrating regen** | Measures actual regrowth instead of guessing |
 | **Ready alerts** | Action-bar + sound when a tree comes back |
+| **Leftover nudge** | Tells you when you walk off a trunk you did not finish |
+| **Stats screen** | Everything the mod measures, in one place, live |
+| **Route recording** | Records the loop you walk, by the trees you fell |
+| **Lap timer** | This lap against your best, per route |
+| **Route splits** | Hop by hop: which leg is actually costing you the lap |
+| **Route sharing** | A route as a code or a file, for sending to somebody |
 | **Session & lifetime stats** | Persisted across restarts |
 | **Collection rank** | Captured when you open a collection leaderboard |
 | **Skyblock detection** | Overlay stays hidden everywhere else |
-| **Route planning** | Orders trees by fastest payoff, not just distance |
 | **Tracers & highlights** | Green box on each tree's centre, lines pointing to it |
 
 ## Automatic tracking
@@ -93,6 +100,61 @@ The first tracer runs from just below your eye level to the next tree; chained
 tracers then hop centre-block to centre-block through the rest of the route.
 Tune the centre height with `/route center <0-12>` if Park birches sit taller
 or shorter than expected.
+
+## What it measures about you
+
+Two numbers underneath every estimate the mod makes are measured from play
+rather than configured, and both persist between sessions:
+
+- **Birch regrowth.** Timed from trees actually coming back, so the countdown
+  calibrates to Hypixel's real rate instead of a guess. Marked `(est)` until a
+  cycle has been watched.
+- **Travel speed.** A Skyblock speed stat moves you several times faster than
+  vanilla sprinting. Assuming a constant made every ETA pessimistic and made
+  the optimiser pick fewer trees than it should.
+
+Both are on the **Stats** tab, along with the session and lifetime totals, your
+lap times, which form of birch currently pays best, and how many legs of your
+route have been timed. Nothing on that screen is a setting — it is all
+measurement, which is what makes it the place to check whether changing a
+setting helped.
+
+## Collection tier
+
+Hypixel serves the collection ladder as static game data, so the tiers need no
+API key. Your position on it does — the total comes from your profile — but the
+rungs and what they unlock are visible either way.
+
+With both, the HUD can answer the question a rate alone cannot:
+
+```
+Tier 7/9: 1,520 to go (14m)
+```
+
+Birch Log has nine tiers, topping out at 25,000. The same display works for any
+wood the Bazaar product is pointed at, because the ladder is looked up by that
+id rather than hard-coded to birch.
+
+## Route splits
+
+A lap timer says a loop came in eight seconds off its best. That is worth
+knowing and it is not actionable — eight seconds are missing and it does not say
+where from.
+
+`/route splits` compares each hop against how long it should take, two ways: the
+straight-line distance over your measured travel speed, and the time that hop
+has really taken across every session. Where the two disagree, the ground does
+not match the map.
+
+```
+Slowest: stop 4 → 5 costs +8.2s (19.0 blocks in 26.1s)
+```
+
+Ranked by **seconds lost, not by ratio**. A two-block step between neighbouring
+trees always reads as several times slower than predicted, because the
+prediction is a fraction of a second and the real thing includes turning to face
+the tree; a trek across a gully reads as only 44% slow and costs eight seconds.
+Seconds are what a lap is made of, so seconds decide.
 
 ## Commands
 
@@ -230,6 +292,7 @@ src/main/java/com/birchmod/
 │
 ├── api/BazaarManager.java              # tax-aware multi-product pricing
 ├── api/CollectionApi.java              # birch collection total (10-min poll)
+├── api/CollectionTiers.java            # the collection ladder (no key needed)
 │
 ├── command/BirchCommand.java           # /birch …
 ├── command/RouteCommand.java           # /route …
@@ -239,6 +302,7 @@ src/main/java/com/birchmod/
 ├── config/BirchConfig.java             # JSON config, migrated and clamped
 │
 ├── gui/BirchScreen.java                # settings, scrolling + searchable
+├── gui/StatsScreen.java                # everything measured, on one screen
 ├── gui/Chrome.java                     # the frame every screen shares
 ├── gui/OverlayTab.java                 # \
 ├── gui/TreesTab.java                   #  } the four settings tabs
@@ -261,6 +325,7 @@ src/main/java/com/birchmod/
 ├── route/RouteLibrary.java             # saved loops, and how they score
 ├── route/RouteFollower.java            # walks a loop in recorded order
 ├── route/Advance.java                  # when the green marker moves on
+├── route/Splits.java                   # which hop is costing you the lap
 ├── route/TreeSight.java                # resolves a recorded point to a log
 ├── route/Stop.java                     # one stop, as renderers see it
 ├── route/FreePlanner.java              # planning with no recorded route

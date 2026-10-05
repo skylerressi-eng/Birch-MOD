@@ -27,6 +27,7 @@ import net.minecraft.network.chat.Component;
 public class RoutesScreen extends Screen {
 
     private static final int TAB_INDEX = 4;
+    private static final int STATS_TAB = 5;
     private static final int BUTTON_HEIGHT = 20;
     private static final int BUTTON_GAP = 3;
 
@@ -82,7 +83,7 @@ public class RoutesScreen extends Screen {
         // A screen that could not be built has no buttons on it — including
         // the one that closes it — so leave rather than strand the player in
         // an empty window.
-        broken = !Chrome.attempt("screen", this::buildScreen);
+        broken = !Chrome.attempt("routes-screen", this::buildScreen);
     }
 
     private void buildScreen() {
@@ -171,8 +172,19 @@ public class RoutesScreen extends Screen {
         updateButtons();
     }
 
+    /**
+     * Hand over to whichever screen owns that tab.
+     *
+     * Stats is its own screen rather than a settings grid, so it cannot be
+     * reached by handing an index to {@link BirchScreen} — that clamps anything
+     * past its own four tabs, which would quietly open Alerts instead.
+     */
     private void openTab(int index) {
         if (index == TAB_INDEX) {
+            return;
+        }
+        if (index == STATS_TAB) {
+            minecraft.setScreen(new StatsScreen(parent));
             return;
         }
         minecraft.setScreen(new BirchScreen(parent, index));
@@ -189,7 +201,7 @@ public class RoutesScreen extends Screen {
             onClose();
             return;
         }
-        Chrome.guard("screen", this::updateButtons);
+        Chrome.guard("routes-screen", this::updateButtons);
     }
 
     /**

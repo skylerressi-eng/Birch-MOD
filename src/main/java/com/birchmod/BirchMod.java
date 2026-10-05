@@ -2,6 +2,7 @@ package com.birchmod;
 
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.CollectionApi;
+import com.birchmod.api.CollectionTiers;
 import com.birchmod.command.BirchCommand;
 import com.birchmod.command.RouteCommand;
 import com.birchmod.command.TimerCommand;
@@ -126,9 +127,12 @@ public class BirchMod implements ClientModInitializer {
             }
         });
 
-        // Both API managers poll on their own 10-minute schedule.
+        // The API managers poll on their own schedules, off the client thread.
         bazaar.start();
         collectionApi.start();
+        // The collection ladder is static game data and needs no key, so it is
+        // fetched once and then left alone.
+        CollectionTiers.start();
 
         Keybinds.register();
 

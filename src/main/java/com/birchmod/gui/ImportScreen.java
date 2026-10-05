@@ -57,7 +57,7 @@ public class ImportScreen extends Screen {
         // A screen that could not be built has no buttons on it — including
         // the one that closes it — so leave rather than strand the player in
         // an empty window.
-        broken = !Chrome.attempt("screen", this::buildScreen);
+        broken = !Chrome.attempt("import-screen", this::buildScreen);
     }
 
     private void buildScreen() {
@@ -105,7 +105,7 @@ public class ImportScreen extends Screen {
             onClose();
             return;
         }
-        Chrome.guard("screen", this::updateButtons);
+        Chrome.guard("import-screen", this::updateButtons);
     }
 
     private void updateButtons() {

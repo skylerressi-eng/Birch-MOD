@@ -66,6 +66,7 @@ final class Help {
         entry(source, "/route gui", "the settings screen; the Routes tab imports and exports");
         entry(source, "/route", "the current route, stop by stop, with what is left on each");
         entry(source, "/route stats", "measured leg times, travel speed and chop history");
+        entry(source, "/route splits [name]", "hop by hop: which leg is costing you the lap");
 
         line(source, "§8§f/birch help§8 covers tracking, prices and the overlay.");
     }

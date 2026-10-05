@@ -230,15 +230,27 @@ public class CollectionApi {
 
     /** Birch in one member's collection map, or -1 if it is not being shared. */
     static long birchIn(JsonObject member) {
+        return amountIn(member, BirchConfig.get().bazaarProductId);
+    }
+
+    /**
+     * How much of one collection a member has, or -1 if it is not being shared.
+     *
+     * Keyed on whatever product the mod is pointed at rather than on birch.
+     * Skyblock names a collection with the same id the Bazaar uses — {@code
+     * LOG:2} is birch in both — so a player who switches the mod to oak now
+     * gets oak's total instead of a birch figure labelled as theirs.
+     */
+    static long amountIn(JsonObject member, String productId) {
         JsonElement collection = member.get("collection");
         if (collection == null || !collection.isJsonObject()) {
             return -1L;
         }
         JsonObject map = collection.getAsJsonObject();
-        JsonElement birch = map.get(BazaarManager.BIRCH_PRODUCT);
+        JsonElement birch = productId == null ? null : map.get(productId);
         if (birch == null || !birch.isJsonPrimitive()) {
-            // Sharing collections but has never cut birch: nothing collected,
-            // which is a real answer and not a missing one.
+            // Sharing collections but has never cut this wood: nothing
+            // collected, which is a real answer and not a missing one.
             return 0L;
         }
         try {

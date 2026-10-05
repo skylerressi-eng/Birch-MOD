@@ -56,6 +56,11 @@ final class OverlayTab implements BirchScreen.Tab {
                 "Lifetime birch on the profile you are playing, fetched with your "
                         + "API key. Set one with /birch apikey and /birch name.",
                 () -> c.showLeaderboard, v -> c.showLeaderboard = v));
+        controls.add(BirchScreen.toggle("Collection tier",
+                "Which tier you are on, how much of it is left, and how long that "
+                        + "will take at your current rate. Needs an API key for the "
+                        + "total; the tiers themselves come from Hypixel.",
+                () -> c.showTier, v -> c.showTier = v));
 
         return controls;
     }

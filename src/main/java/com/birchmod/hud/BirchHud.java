@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.CollectionApi;
+import com.birchmod.api.CollectionTiers;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.BirchMod;
 import com.birchmod.route.LapTracker;
@@ -202,7 +203,17 @@ public class BirchHud implements HudElement {
 
         if (config.showCoinRate && netPerLog > 0.0) {
             String taxNote = config.applyBazaarTax ? " net" : "";
-            lines.add(new Line("Coins/hr" + taxNote + ": " + INT_FMT.format(perHour * netPerLog), COLOR_GOLD));
+            // Say which form of birch that figure assumes you are selling.
+            // Enchanted birch is 160 logs a piece and usually pays better per
+            // log, so coins/hr was quietly quoting a price you only get if you
+            // craft — a number nobody could reconcile with the one above it.
+            String via = "";
+            String best = bazaar.getBestProductId();
+            if (best != null && !best.equals(config.bazaarProductId)) {
+                via = " via " + BazaarManager.friendlyName(best);
+            }
+            lines.add(new Line("Coins/hr" + taxNote + ": "
+                    + INT_FMT.format(perHour * netPerLog) + via, COLOR_GOLD));
         }
 
         if (config.showRegen && config.regenTimerEnabled) {
@@ -245,7 +256,46 @@ public class BirchHud implements HudElement {
             }
         }
 
+        if (config.showTier) {
+            Line tier = tierLine(config, perHour);
+            if (tier != null) {
+                lines.add(tier);
+            }
+        }
+
         return lines;
+    }
+
+    /**
+     * How far up the collection ladder you are, and how long the rest will take.
+     *
+     * This is the only row that answers "how much longer" rather than "how fast
+     * right now", which is the question that actually decides whether you keep
+     * foraging — so it earns its line. Hidden rather than shown empty when the
+     * total is unknown: a key is needed for the total, and a row reading
+     * "Tier: —" forever is just clutter on the screen of anyone who has not set
+     * one.
+     */
+    private Line tierLine(BirchConfig config, double perHour) {
+        long collected = collectionApi.getBirchCollected();
+        CollectionTiers.Progress progress =
+                CollectionTiers.progressFor(config.bazaarProductId, collected);
+        if (progress == null) {
+            return null;
+        }
+        if (progress.maxed()) {
+            return new Line("Tier " + progress.tier() + "/" + progress.maxTiers()
+                    + ": maxed", COLOR_GREEN);
+        }
+
+        String text = "Tier " + progress.tier() + "/" + progress.maxTiers() + ": "
+                + INT_FMT.format(progress.remaining()) + " to go";
+
+        double seconds = progress.secondsToNext(perHour);
+        if (seconds > 0.0) {
+            text += " (" + SessionStats.formatDuration((long) (seconds * 1000.0)) + ")";
+        }
+        return new Line(text, COLOR_AQUA);
     }
 
     /**

@@ -97,6 +97,20 @@ public final class Guard {
         return failures.getOrDefault(feature, 0);
     }
 
+    /**
+     * Everything that has thrown this session, and how often.
+     *
+     * Diagnostics used to walk a list of feature names written out by hand,
+     * which is a list that goes stale the moment a guard is renamed or added —
+     * and renaming guards is exactly what had to happen to stop one broken
+     * button disabling all of them. A hand-written list does not merely miss
+     * the new names, it reports "no component has thrown this session" while
+     * one is sitting disabled, which is worse than saying nothing.
+     */
+    public static Map<String, Integer> getFailures() {
+        return Map.copyOf(failures);
+    }
+
     /** Re-enable everything, e.g. after the user changes a setting. */
     public static void reset() {
         disabled.clear();

@@ -59,8 +59,9 @@ public final class BirchScreen extends Screen {
     /** How far one notch of the wheel moves the list. */
     private static final int SCROLL_STEP = 26;
 
-    /** The tab index that is not a grid of settings but a screen of its own. */
+    /** The tab indices that are not a grid of settings but screens of their own. */
     private static final int ROUTES_TAB = 4;
+    private static final int STATS_TAB = 5;
 
     /**
      * One thing on a settings tab.
@@ -165,7 +166,7 @@ public final class BirchScreen extends Screen {
         // A screen that could not be built has no buttons on it — including
         // the one that closes it — so leave rather than strand the player in
         // an empty window.
-        broken = !Chrome.attempt("screen", this::buildScreen);
+        broken = !Chrome.attempt("settings-screen", this::buildScreen);
     }
 
     private void buildScreen() {
@@ -338,10 +339,14 @@ public final class BirchScreen extends Screen {
         return false;
     }
 
-    /** Tabs four and under are grids here; the fifth is a screen of its own. */
+    /** The first four tabs are grids here; the last two are screens of their own. */
     private void openTab(int index) {
         if (index == ROUTES_TAB) {
             minecraft.setScreen(new RoutesScreen(parent));
+            return;
+        }
+        if (index == STATS_TAB) {
+            minecraft.setScreen(new StatsScreen(parent));
             return;
         }
         if (index == activeTab) {
@@ -364,7 +369,7 @@ public final class BirchScreen extends Screen {
             onClose();
             return;
         }
-        Chrome.guard("screen", () -> {
+        Chrome.guard("settings-screen", () -> {
             if (rebuildRequested) {
                 rebuildRequested = false;
                 rebuildWidgets();
@@ -481,11 +486,19 @@ public final class BirchScreen extends Screen {
         });
     }
 
-    /** A plain button that runs something. */
+    /**
+     * A plain button that runs something.
+     *
+     * The guard is named after the button, not after "a button". Every action
+     * on every tab shared one name, and the guard disables a name after five
+     * failures — so five misbehaving presses spread across five unrelated
+     * buttons switched off every button in the mod for the rest of the session,
+     * including the ones that were working.
+     */
     public static Item action(String label, String tooltip, Runnable onPress) {
         return new Item(null, label, tooltip, () -> {
             Button button = Button.builder(Component.literal(label),
-                            Chrome.safely("action", onPress))
+                            Chrome.safely(label, onPress))
                     .bounds(0, 0, 150, WIDGET_HEIGHT).build();
             if (tooltip != null) {
                 button.setTooltip(Tooltip.create(Component.literal(tooltip)));

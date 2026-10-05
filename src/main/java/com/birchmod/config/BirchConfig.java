@@ -65,6 +65,13 @@ public final class BirchConfig {
     public boolean showLeaderboard = true;
     /** Live lap timer against your best lap on the active route. */
     public boolean showLap = true;
+    /**
+     * Collection tier, how much is left of it, and how long that will take.
+     *
+     * Shown only once the total is known, which needs an API key — so this
+     * being on costs nothing to anyone who has not set one.
+     */
+    public boolean showTier = true;
 
     // ---- Bazaar ----
     /** Show insta-buy price (true) or insta-sell price (false). */

@@ -16,6 +16,25 @@ public final class HttpUtil {
     private static final int MAX_ATTEMPTS = 3;
     private static final long BASE_BACKOFF_MS = 500L;
 
+    /**
+     * What Hypixel sees us as.
+     *
+     * Read from the jar rather than written out here, which it was — frozen at
+     * 1.0.0 for twenty releases. A user agent exists so that whoever is reading
+     * the other end's logs can tell one version of a client from another, and a
+     * constant string is the one thing that cannot do that. Resolved once, and
+     * defensively, because a request must not fail over its own label.
+     */
+    private static final String USER_AGENT = agent();
+
+    private static String agent() {
+        try {
+            return "BirchOptimizer/" + com.birchmod.BirchMod.version();
+        } catch (Throwable ignored) {
+            return "BirchOptimizer";
+        }
+    }
+
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(TIMEOUT)
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -82,7 +101,7 @@ public final class HttpUtil {
                 HttpRequest.Builder builder = HttpRequest.newBuilder()
                         .uri(URI.create(url))
                         .timeout(TIMEOUT)
-                        .header("User-Agent", "BirchOptimizer/1.0.0")
+                        .header("User-Agent", USER_AGENT)
                         .GET();
                 if (headerName != null && headerValue != null && !headerValue.isBlank()) {
                     builder.header(headerName, headerValue);

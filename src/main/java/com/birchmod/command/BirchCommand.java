@@ -1,10 +1,13 @@
 package com.birchmod.command;
 
 import java.text.DecimalFormat;
+import java.util.Map;
+import java.util.TreeMap;
 
 import com.birchmod.BirchMod;
 import com.birchmod.api.BazaarManager;
 import com.birchmod.api.CollectionApi;
+import com.birchmod.api.CollectionTiers;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.stats.SessionStats;
 import com.birchmod.tracking.BirchTracker;
@@ -454,30 +457,32 @@ public final class BirchCommand {
                 + " §7on MC §f" + BirchMod.minecraftVersion() + " §8(no mixins)");
         feedback(source, "§7Safe mode: " + onOff(BirchConfig.get().safeMode));
 
-        String[] features = {
-                "hud", "tracers", "tree-timers", "birch-tracker", "regen-tracker",
-                "collection-rank", "route-builder", "keybinds", "skyblock-detect",
-                "movement", "leftovers", "travel-chain",
-                "gui-screen", "gui-routes", "gui-toggle", "gui-action"
-        };
-
-        boolean anyFailure = false;
-        for (String feature : features) {
-            int count = Guard.getFailureCount(feature);
-            if (count == 0) {
-                continue;
-            }
-            anyFailure = true;
-            String state = Guard.isDisabled(feature) ? "§cDISABLED" : "§eerrored";
-            feedback(source, "§7  " + feature + ": " + state + " §8(" + count + " failures)");
+        // Whatever has actually thrown, rather than a list of feature names
+        // written out here. The hand-written list went stale the moment a guard
+        // was renamed, and a stale list does not just miss a failure — it
+        // reports "nothing has thrown" while a component sits disabled.
+        Map<String, Integer> failures = new TreeMap<>(Guard.getFailures());
+        for (Map.Entry<String, Integer> entry : failures.entrySet()) {
+            String state = Guard.isDisabled(entry.getKey()) ? "§cDISABLED" : "§eerrored";
+            feedback(source, "§7  " + entry.getKey() + ": " + state
+                    + " §8(" + entry.getValue() + " failure"
+                    + (entry.getValue() == 1 ? "" : "s") + ")");
         }
 
-        if (!anyFailure) {
+        if (failures.isEmpty()) {
             feedback(source, "§aNo component has thrown this session.");
             feedback(source, "§8If the game still misbehaves, the cause is outside this mod.");
         } else {
             feedback(source, "§8Full stack traces are in your latest.log — search 'BirchOptimizer'.");
         }
+
+        // What the two background fetches have managed, since "the HUD shows
+        // nothing" is far more often an API answer than a thrown exception.
+        feedback(source, "§7Bazaar: §f" + BirchMod.bazaar.getStatus()
+                + " §8(" + BirchMod.bazaar.getMinutesSinceUpdate() + "m ago)");
+        feedback(source, "§7Collection: §f" + BirchMod.collectionApi.getStatus());
+        feedback(source, "§7Tier ladders: §f" + CollectionTiers.getStatus()
+                + " §8(" + CollectionTiers.size() + " known)");
     }
 
     private static void header(FabricClientCommandSource source) {

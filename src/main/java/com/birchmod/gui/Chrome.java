@@ -73,13 +73,14 @@ public final class Chrome {
     public static final int TEXT_GREEN = 0xFF55FF55;
     public static final int TEXT_GOLD = 0xFFFFAA00;
     public static final int TEXT_RED = 0xFFFF5555;
+    public static final int TEXT_AQUA = 0xFF55FFFF;
 
     private Chrome() {
     }
 
-    /** The five tabs, in order. Index is what a screen reports as its own. */
+    /** The tabs, in order. Index is what a screen reports as its own. */
     public static final List<String> TABS =
-            List.of("Overlay", "Route", "Trees", "Alerts", "Routes");
+            List.of("Overlay", "Route", "Trees", "Alerts", "Routes", "Stats");
 
     /**
      * Run something a screen does, without letting it take the game down.
@@ -89,6 +90,15 @@ public final class Chrome {
      * session. The screens are the only part that touches the disk and the
      * clipboard while the game is waiting on it — a full disk or a permission
      * the launcher does not have would otherwise be a crash report.
+     *
+     * <h2>Name these narrowly</h2>
+     * The guard counts failures per name and switches a name off for the rest
+     * of the session after five. So a name shared between unrelated things is a
+     * name that takes all of them down together: every screen in the mod was
+     * guarded as {@code "screen"} and every button as {@code "action"}, which
+     * meant five failures spread across five unrelated places disabled every
+     * screen and every button, including the ones that were working. One name
+     * per thing that could independently be broken.
      */
     public static void guard(String what, Runnable action) {
         Guard.run("gui-" + what, action);
@@ -122,7 +132,7 @@ public final class Chrome {
 
             Button button = Button.builder(Component.literal(TABS.get(i)),
                             b -> onPick.accept(index))
-                    .bounds(startX + i * tab, TAB_Y, tab - 4, TAB_HEIGHT)
+                    .bounds(startX + i * tab, TAB_Y, tab - TAB_GUTTER, TAB_HEIGHT)
                     .build();
             button.active = !current;
             add.accept(button);
@@ -132,18 +142,32 @@ public final class Chrome {
     /**
      * How wide one tab is at this window width.
      *
-     * Five tabs at a fixed width came to more than the narrowest window the
-     * game will hand us — 320 scaled pixels — so the strip ran off both edges
-     * and the outer tabs could not be clicked. It shrinks to fit instead.
+     * At a fixed width the strip came to more than the narrowest window the
+     * game will hand us — 320 scaled pixels — so it ran off both edges and the
+     * outer tabs could not be clicked. It shrinks to fit instead, which is also
+     * what let a sixth tab be added without the other five moving house.
      */
     public static int tabWidth(int width) {
         int room = Math.max(0, width - MARGIN * 2);
         return Math.max(28, Math.min(TAB_WIDTH, room / TABS.size()));
     }
 
+    /**
+     * Left edge of the strip, centred on what is actually drawn.
+     *
+     * A tab occupies {@code tabWidth} but is drawn four pixels narrower, so the
+     * strip spans one gutter less than the pitch suggests. Centring on the
+     * pitch left it two pixels right of centre — invisible with five tabs of
+     * one width, and the kind of thing that stops being invisible the moment
+     * the tabs are narrower and there are more of them.
+     */
     private static int tabStripLeft(int width) {
-        return Math.max(0, (width - tabWidth(width) * TABS.size()) / 2);
+        int span = tabWidth(width) * TABS.size() - TAB_GUTTER;
+        return Math.max(0, (width - span) / 2);
     }
+
+    /** Gap between tabs: a tab is drawn this much narrower than its pitch. */
+    private static final int TAB_GUTTER = 4;
 
     /**
      * Title, the mark under the active tab, and a wash behind the content.
@@ -163,7 +187,7 @@ public final class Chrome {
         if (active >= 0 && active < TABS.size()) {
             int tab = tabWidth(width);
             int tabX = tabStripLeft(width) + active * tab;
-            graphics.fill(tabX, TAB_Y + TAB_HEIGHT, tabX + tab - 4,
+            graphics.fill(tabX, TAB_Y + TAB_HEIGHT, tabX + tab - TAB_GUTTER,
                     TAB_Y + TAB_HEIGHT + 2, ACCENT);
         }
 

@@ -12,6 +12,7 @@ import com.birchmod.route.RouteBuilder;
 import com.birchmod.route.RouteLibrary;
 import com.birchmod.route.RouteOptimizer;
 import com.birchmod.route.RouteRecorder;
+import com.birchmod.route.Splits;
 import com.birchmod.route.Stop;
 import com.birchmod.route.TravelGraph;
 import com.birchmod.stats.SessionStats;
@@ -209,6 +210,23 @@ public final class RouteCommand {
                     learned(ctx.getSource());
                     return 1;
                 }))
+                // Where the lap time is actually going. The named route, or the
+                // one being followed when none is named.
+                .then(ClientCommands.literal("splits")
+                        .executes(ctx -> {
+                            splits(ctx.getSource(), RouteLibrary.getActive());
+                            return 1;
+                        })
+                        .then(ClientCommands.argument("name", StringArgumentType.word()).executes(ctx -> {
+                            String name = StringArgumentType.getString(ctx, "name");
+                            RecordedRoute route = RouteLibrary.get(name);
+                            if (route == null) {
+                                feedback(ctx.getSource(), "§cNo route called §f" + name);
+                                return 0;
+                            }
+                            splits(ctx.getSource(), route);
+                            return 1;
+                        })))
                 .then(ClientCommands.literal("help").executes(ctx -> {
                     Help.route(ctx.getSource());
                     return 1;
@@ -705,6 +723,23 @@ public final class RouteCommand {
     private static String onOff(boolean value) {
         return value ? "§aon" : "§coff";
     }
+
+    /**
+     * Hop-by-hop timings for a route, slowest first in the summary.
+     *
+     * The lap timer says a loop is eight seconds off its best; this says which
+     * of the twelve hops they are in. Twelve lines is more than chat wants, so
+     * the list is capped and the slowest hop is called out above it regardless.
+     */
+    private static void splits(FabricClientCommandSource source, RecordedRoute route) {
+        feedback(source, "§6§lRoute legs");
+        for (String line : Splits.describe(route, SPLIT_LINES)) {
+            feedback(source, line);
+        }
+    }
+
+    /** Hops listed before the rest are summarised. Chat is only so tall. */
+    private static final int SPLIT_LINES = 10;
 
     private static void feedback(FabricClientCommandSource source, String message) {
         source.sendFeedback(Component.literal(message));

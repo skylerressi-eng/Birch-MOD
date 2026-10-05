@@ -189,20 +189,32 @@ public class BazaarManager {
     }
 
     /**
-     * How many birch logs one unit of a product is worth.
+     * How many of the tracked log one unit of a product is worth.
      *
      * A product the player configured that is not one of the known relatives
      * was priced on the HUD but silently skipped when working out coins per
      * hour, so the two disagreed. An unknown product counts as one log per
      * unit, which is right for any raw log and at least keeps the figures
      * consistent with what is being displayed.
+     *
+     * Enchanted birch only counts while birch is what is being tracked. The
+     * relatives are birch-specific, and they were being applied whatever the
+     * configured product was — so pointing the mod at oak left coins per hour
+     * quoting the enchanted <em>birch</em> rate and calling it oak income.
      */
-    private double logsPerUnit(String productId) {
-        Double known = RELATED_PRODUCTS.get(productId);
-        if (known != null) {
-            return known;
+    double logsPerUnit(String productId) {
+        if (productId == null) {
+            return 0.0;
         }
-        return productId != null && productId.equals(BirchConfig.get().bazaarProductId) ? 1.0 : 0.0;
+        String tracked = BirchConfig.get().bazaarProductId;
+        if (productId.equals(tracked)) {
+            return 1.0;
+        }
+        if (!BIRCH_PRODUCT.equals(tracked)) {
+            return 0.0;
+        }
+        Double known = RELATED_PRODUCTS.get(productId);
+        return known == null ? 0.0 : known;
     }
 
     /**
@@ -210,15 +222,24 @@ public class BazaarManager {
      *
      * "LOG:2" tells nobody it means birch wood, and it is the one people have
      * to recognise to know the price on their screen is the right one.
+     *
+     * Hypixel's own name is preferred where the collection ladder has been
+     * fetched, because a table written out here goes stale the moment a content
+     * update adds a wood — and several have. The two entries below are the ones
+     * the mod names before that fetch lands, and the only ones it hard-codes.
      */
     public static String friendlyName(String productId) {
+        if (productId == null) {
+            return "?";
+        }
         if (BIRCH_PRODUCT.equals(productId)) {
             return "Birch Wood";
         }
         if (ENCHANTED_BIRCH_PRODUCT.equals(productId)) {
             return "Enchanted Birch Wood";
         }
-        return productId == null ? "?" : productId;
+        String fromGame = CollectionTiers.nameOf(productId);
+        return fromGame != null ? fromGame : productId;
     }
 
     /** Apply the configured Bazaar tax to a gross amount. */
