@@ -1,5 +1,6 @@
 package com.birchmod.input;
 
+import com.birchmod.compat.ClientGui;
 import com.birchmod.config.BirchConfig;
 import com.birchmod.util.Notifier;
 
@@ -79,11 +80,11 @@ public final class Keybinds {
         }
 
         while (openSettings != null && openSettings.consumeClick()) {
-            client.setScreen(new com.birchmod.gui.BirchScreen(null));
+            ClientGui.setScreen(client, new com.birchmod.gui.BirchScreen(null));
         }
 
         while (openStats != null && openStats.consumeClick()) {
-            client.setScreen(new com.birchmod.gui.StatsScreen(null));
+            ClientGui.setScreen(client, new com.birchmod.gui.StatsScreen(null));
         }
 
         while (resetSession != null && resetSession.consumeClick()) {

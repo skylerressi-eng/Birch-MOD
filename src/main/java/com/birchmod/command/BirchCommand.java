@@ -1,5 +1,6 @@
 package com.birchmod.command;
 
+import com.birchmod.compat.ClientGui;
 import java.text.DecimalFormat;
 import java.util.Map;
 import java.util.TreeMap;
@@ -267,7 +268,7 @@ public final class BirchCommand {
         if (client == null) {
             return;
         }
-        client.execute(() -> client.setScreen(new com.birchmod.gui.BirchScreen(null)));
+        client.execute(() -> ClientGui.setScreen(client, new com.birchmod.gui.BirchScreen(null)));
     }
 
     // ---- Output ----

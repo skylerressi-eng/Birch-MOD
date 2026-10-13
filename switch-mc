@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# Point the build at a Minecraft version.
+#
+#   ./switch-mc 26.2
+#   ./switch-mc 26.1.2
+#
+# Why this is a script and not four lines in a README: switching versions means
+# changing the game version, the loader version, the Fabric API version, the
+# Loom version AND the Gradle wrapper's distribution, and the last two have to
+# agree with each other or the build fails in a way that looks nothing like a
+# version mismatch. Doing that by hand is how this mod ended up with two lines
+# of source that had quietly diverged.
+#
+# Everything else follows on its own: build.gradle reads minecraft_version and
+# compiles the matching compat source set (src/mc26_1 or src/mc26_2).
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+if [ $# -ne 1 ]; then
+    echo "usage: $0 <version>" >&2
+    echo "available:" >&2
+    for f in versions/*.properties; do
+        echo "  $(basename "$f" .properties)" >&2
+    done
+    exit 2
+fi
+
+WANTED="$1"
+PROFILE="versions/${WANTED}.properties"
+
+if [ ! -f "$PROFILE" ]; then
+    echo "No profile for '$WANTED'. Available:" >&2
+    for f in versions/*.properties; do
+        echo "  $(basename "$f" .properties)" >&2
+    done
+    exit 1
+fi
+
+# The profile carries the Gradle version for the wrapper but it is not a project
+# property, so it is read here and stripped before being written out.
+GRADLE_VERSION="$(sed -n 's/^gradle_version=//p' "$PROFILE")"
+if [ -z "$GRADLE_VERSION" ]; then
+    echo "$PROFILE does not say which Gradle version to use." >&2
+    exit 1
+fi
+
+# Replace the block between the markers in gradle.properties, leaving the rest
+# of the file — jvm args, mod version, group — exactly as it was.
+python3 - "$PROFILE" <<'PY'
+import re, sys, pathlib
+
+profile = pathlib.Path(sys.argv[1]).read_text()
+block = "\n".join(
+    line for line in profile.splitlines()
+    if line.strip() and not line.startswith("#") and not line.startswith("gradle_version=")
+)
+
+path = pathlib.Path("gradle.properties")
+text = path.read_text()
+start, end = "# >>> target", "# <<< target"
+pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
+if not pattern.search(text):
+    sys.exit("gradle.properties has no '%s' / '%s' block to replace." % (start, end))
+path.write_text(pattern.sub(start + "\n" + block + "\n" + end, text))
+PY
+
+# And the wrapper, which Loom is strict about.
+sed -i.bak -E \
+    "s|gradle-[0-9]+\.[0-9]+(\.[0-9]+)?-bin\.zip|gradle-${GRADLE_VERSION}-bin.zip|" \
+    gradle/wrapper/gradle-wrapper.properties
+rm -f gradle/wrapper/gradle-wrapper.properties.bak
+
+echo "Target is now Minecraft ${WANTED} (Gradle ${GRADLE_VERSION})."
+echo
+sed -n '/# >>> target/,/# <<< target/p' gradle.properties | grep -v '^#'
+echo
+echo "Next: ./gradlew clean build"

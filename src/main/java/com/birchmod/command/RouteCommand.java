@@ -1,5 +1,6 @@
 package com.birchmod.command;
 
+import com.birchmod.compat.ClientGui;
 import java.text.DecimalFormat;
 
 import com.birchmod.config.BirchConfig;
@@ -202,7 +203,7 @@ public final class RouteCommand {
                 .then(ClientCommands.literal("gui").executes(ctx -> {
                     net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
                     if (client != null) {
-                        client.execute(() -> client.setScreen(new com.birchmod.gui.BirchScreen(null)));
+                        client.execute(() -> ClientGui.setScreen(client, new com.birchmod.gui.BirchScreen(null)));
                     }
                     return 1;
                 }))

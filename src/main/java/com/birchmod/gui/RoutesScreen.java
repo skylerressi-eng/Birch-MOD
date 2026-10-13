@@ -1,5 +1,6 @@
 package com.birchmod.gui;
 
+import com.birchmod.compat.ClientGui;
 import java.nio.file.Path;
 
 import com.birchmod.BirchMod;
@@ -163,7 +164,7 @@ public class RoutesScreen extends Screen {
         // Footer.
         int footerY = Chrome.footerY(height);
         addRenderableWidget(Button.builder(Component.literal("Import a route…"),
-                        b -> minecraft.setScreen(new ImportScreen(this)))
+                        b -> ClientGui.setScreen(minecraft, new ImportScreen(this)))
                 .bounds(Chrome.MARGIN, footerY, 130, BUTTON_HEIGHT).build());
 
         addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
@@ -184,10 +185,10 @@ public class RoutesScreen extends Screen {
             return;
         }
         if (index == STATS_TAB) {
-            minecraft.setScreen(new StatsScreen(parent));
+            ClientGui.setScreen(minecraft, new StatsScreen(parent));
             return;
         }
-        minecraft.setScreen(new BirchScreen(parent, index));
+        ClientGui.setScreen(minecraft, new BirchScreen(parent, index));
     }
 
     @Override
@@ -422,7 +423,7 @@ public class RoutesScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(parent);
+        ClientGui.setScreen(minecraft, parent);
     }
 
     @Override

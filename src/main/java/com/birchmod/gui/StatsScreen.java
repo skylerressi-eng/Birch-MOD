@@ -1,5 +1,6 @@
 package com.birchmod.gui;
 
+import com.birchmod.compat.ClientGui;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -118,10 +119,10 @@ public class StatsScreen extends Screen {
             return;
         }
         if (index == 4) {
-            minecraft.setScreen(new RoutesScreen(parent));
+            ClientGui.setScreen(minecraft, new RoutesScreen(parent));
             return;
         }
-        minecraft.setScreen(new BirchScreen(parent, index));
+        ClientGui.setScreen(minecraft, new BirchScreen(parent, index));
     }
 
     private int listTop() {
@@ -535,7 +536,7 @@ public class StatsScreen extends Screen {
     @Override
     public void onClose() {
         if (minecraft != null) {
-            minecraft.setScreen(parent);
+            ClientGui.setScreen(minecraft, parent);
         }
     }
 

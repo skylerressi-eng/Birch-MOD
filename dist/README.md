@@ -2,27 +2,28 @@
 
 Built jars, committed so there is a direct download link.
 
-One per Minecraft version — they are not interchangeable. Fabric reads the
-target out of the jar and refuses to load one built for a different version,
-so picking the wrong file fails at startup rather than misbehaving quietly.
-
-| Minecraft | Jar | Fabric Loader | |
-|---|---|---|---|
-| **26.1.2** | `birchoptimizer-1.21.0.jar` | 0.19.3+ | current |
-| **26.2**   | `birchoptimizer-2.1.0.jar`  | 0.19.5+ | behind |
+| Minecraft | Jar | Fabric Loader |
+|---|---|---|
+| **26.2**   | `birchoptimizer-2.2.0+26.2.jar`   | 0.19.5+ |
+| **26.1.2** | `birchoptimizer-2.2.0+26.1.2.jar` | 0.19.3+ |
 
 Both need Fabric API and Java 25. Drop the jar in your `mods/` folder, and
-delete any older Birch Optimizer jar first — two copies of the same mod id
-stop Fabric from starting.
+delete any older Birch Optimizer jar first — two copies of the same mod id stop
+Fabric from starting.
 
-## About the 26.2 jar
+They are not interchangeable. Fabric reads the target out of the jar and
+refuses to load one built for a different version, so picking the wrong file
+fails at startup rather than misbehaving quietly.
 
-It is an older build. Development is on 26.1.2, which is what is being played,
-and the two versions need different source for the client rendering and screen
-calls — so keeping both current means porting every change twice, for a jar
-nobody is running.
+## Same mod, both of them
 
-The 26.2 jar therefore does not have: the Stats tab, collection tiers, route
-splits, or the fixes that came with them. Its source is kept on the
-`mc26.2-line` tag and it can be brought forward on request; everything since is
-version-independent and ports mechanically.
+`2.2.0` is the mod version and the suffix is the game it targets, which is
+Fabric's own convention. Both jars are built from one source tree at the same
+commit and run the same checks, so a fix is in both or in neither — there is no
+"current" and "behind" any more.
+
+That was not true before. Moving between the two versions meant editing the
+same nine call sites by hand, which left the two lines of source quietly
+diverging, so the 26.2 jar sat several features behind. The renames now live in
+one file per version under `src/mc26_1` and `src/mc26_2`, and `./switch-mc`
+picks one.

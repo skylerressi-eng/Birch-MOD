@@ -1,5 +1,6 @@
 package com.birchmod.hud;
 
+import com.birchmod.compat.ClientGui;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -121,7 +122,7 @@ public class BirchHud implements HudElement {
         }
 
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.options.hideGui) {
+        if (client == null || client.player == null || ClientGui.hudHidden(client)) {
             return;
         }
         if (!SkyblockDetector.shouldRender(config.onlyInSkyblock)) {

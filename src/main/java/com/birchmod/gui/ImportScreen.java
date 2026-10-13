@@ -1,5 +1,6 @@
 package com.birchmod.gui;
 
+import com.birchmod.compat.ClientGui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -74,7 +75,7 @@ public class ImportScreen extends Screen {
         int footerY = Chrome.footerY(height);
 
         addRenderableWidget(Button.builder(Component.literal("Back"),
-                        b -> minecraft.setScreen(parent))
+                        b -> ClientGui.setScreen(minecraft, parent))
                 .bounds(Chrome.MARGIN, footerY, 70, BUTTON_HEIGHT).build());
 
         Button refresh = addRenderableWidget(Button.builder(Component.literal("Refresh"), b -> {
@@ -134,7 +135,7 @@ public class ImportScreen extends Screen {
             Notifier.chat("§8You already had a §f" + wanted + "§8, so this is §f"
                     + route.name + "§8.");
         }
-        minecraft.setScreen(parent);
+        ClientGui.setScreen(minecraft, parent);
     }
 
     @Override
@@ -156,7 +157,7 @@ public class ImportScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.setScreen(parent);
+        ClientGui.setScreen(minecraft, parent);
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.birchmod.util;
 
+import com.birchmod.compat.ClientGui;
 import com.birchmod.config.BirchConfig;
 
 import net.minecraft.client.Minecraft;
@@ -45,20 +46,12 @@ public final class Notifier {
 
     /** Show a message on the action bar (above the hotbar). */
     public static void actionBar(String message) {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.gui == null) {
-            return;
-        }
-        client.gui.setOverlayMessage(Component.literal(message), false);
+        ClientGui.overlay(Minecraft.getInstance(), Component.literal(message));
     }
 
     /** Send a message to chat, prefixed with the mod name. */
     public static void chat(String message) {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.gui == null) {
-            return;
-        }
-        client.gui.getChat().addClientSystemMessage(
+        ClientGui.chat(Minecraft.getInstance(),
                 Component.literal("§6[Birch] §r" + message));
     }
 

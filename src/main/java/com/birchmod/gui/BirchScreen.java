@@ -1,5 +1,6 @@
 package com.birchmod.gui;
 
+import com.birchmod.compat.ClientGui;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -342,11 +343,11 @@ public final class BirchScreen extends Screen {
     /** The first four tabs are grids here; the last two are screens of their own. */
     private void openTab(int index) {
         if (index == ROUTES_TAB) {
-            minecraft.setScreen(new RoutesScreen(parent));
+            ClientGui.setScreen(minecraft, new RoutesScreen(parent));
             return;
         }
         if (index == STATS_TAB) {
-            minecraft.setScreen(new StatsScreen(parent));
+            ClientGui.setScreen(minecraft, new StatsScreen(parent));
             return;
         }
         if (index == activeTab) {
@@ -431,7 +432,7 @@ public final class BirchScreen extends Screen {
     public void onClose() {
         BirchConfig.save();
         if (minecraft != null) {
-            minecraft.setScreen(parent);
+            ClientGui.setScreen(minecraft, parent);
         }
     }
 

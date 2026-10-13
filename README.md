@@ -1,11 +1,10 @@
 # Birch Optimizer
 
-A **Hypixel Skyblock** QOL mod for **Minecraft 26.1.2** on **Fabric**, built to
-optimize birch foraging. Everything tracks itself — there is nothing to start,
-stop, or reset by hand.
+A **Hypixel Skyblock** QOL mod for **Minecraft 26.2 and 26.1.2** on **Fabric**,
+built to optimize birch foraging. Everything tracks itself — there is nothing to
+start, stop, or reset by hand.
 
-A 26.2 build ships too — see [`dist/`](dist/) for both jars and which one to
-take.
+Grab a jar from [`dist/`](dist/) — one per game version, same mod in both.
 
 ```
 Birch Optimizer
@@ -251,14 +250,53 @@ Everything is settable in-game via `/birch`. The backing file is
 The jar lands in `build/libs/`. Drop it in `.minecraft/mods` alongside
 [Fabric API](https://modrinth.com/mod/fabric-api).
 
-**Toolchain:** Fabric Loader `0.19.3` · Fabric API `0.155.2+26.1.2` ·
-Loom `1.15-SNAPSHOT` (`net.fabricmc.fabric-loom`) · Gradle `9.4.0` · Java 25
+**Toolchain:** Java 25, and a Loom and Gradle that match the target:
 
-The 26.2 line needs a newer toolchain — Loom `1.18.2`, which in turn wants
-Gradle `9.8.0` — and is kept on the `mc26.2-line` tag.
+| Minecraft | Fabric Loader | Fabric API | Loom | Gradle |
+|---|---|---|---|---|
+| 26.2   | `0.19.5` | `0.161.0+26.2`   | `1.18.2`        | `9.8.0` |
+| 26.1.2 | `0.19.3` | `0.155.2+26.1.2` | `1.15-SNAPSHOT` | `9.4.0` |
+
+Switch target with `./switch-mc 26.2` or `./switch-mc 26.1.2`, then
+`./gradlew build`. The script moves all five together — including the Gradle
+wrapper, because Loom is strict about it and a mismatch fails in a way that
+looks nothing like a version problem.
 
 Because 26.1 is unobfuscated, there is no `mappings` line, dependencies use
 plain `implementation` (not `modImplementation`), and `jar` replaces `remapJar`.
+
+## Two game versions, one source tree
+
+Minecraft 26.2 moved four client calls and rewrote how geometry reaches the
+renderer. That is nine mechanical edits plus three renderer files — and this mod
+was carried between the versions three times by making those edits by hand,
+which is three chances to miss one on the version you are *not* testing. It also
+left the two lines of source diverging, so a fix made on one was simply absent
+from the other.
+
+So they are source sets now, with the same class names in each, and exactly one
+is compiled:
+
+```
+src/main/java      everything else, with no version-specific calls in it
+src/mc26_1/java    compat/ClientGui + render/*   against 26.1 names
+src/mc26_2/java    the same classes              against 26.2 names
+```
+
+`build.gradle` reads `minecraft_version` and picks one. Nothing in `src/main`
+knows which version it is being built for.
+
+| What moved | 26.1.2 | 26.2 |
+|---|---|---|
+| Current screen | `client.screen` | `client.gui.screen()` |
+| Open a screen | `client.setScreen(s)` | `client.gui.setScreen(s)` |
+| HUD hidden (F1) | `client.options.hideGui` | `client.gui.hud.isHidden()` |
+| Action bar | `client.gui.setOverlayMessage(…)` | `client.gui.hud.setOverlayMessage(…)` |
+| Chat | `client.gui.getChat()` | `client.gui.hud.getChat()` |
+| Camera | `gameRenderer.getMainCamera()` | `gameRenderer.mainCamera()` |
+| Geometry | `MultiBufferSource` + `endBatch()` | `SubmitNodeCollector` + `submitCustomGeometry` |
+| World text | `font.drawInBatch(…)` | `collector.submitText(…)` |
+| Draw mode | `VertexFormat.Mode` | `PrimitiveTopology` |
 
 ## Why 26.1 / Fabric
 
@@ -270,7 +308,7 @@ Yarn mappings are retired and mods build against official Mojang names.
 
 ## Notable 26.1 APIs used
 
-Confirmed against the real 26.1.2 / Fabric API 0.155.2 jars:
+Confirmed against the real 26.2 and 26.1.2 jars, not from memory:
 
 | Purpose | API |
 |---------|-----|
@@ -289,6 +327,8 @@ Confirmed against the real 26.1.2 / Fabric API 0.155.2 jars:
 ```
 src/main/java/com/birchmod/
 ├── BirchMod.java                       # ClientModInitializer entrypoint
+│                                       # (compat/ and render/ are per-version;
+│                                       #  see src/mc26_1 and src/mc26_2)
 │
 ├── api/BazaarManager.java              # tax-aware multi-product pricing
 ├── api/CollectionApi.java              # birch collection total (10-min poll)

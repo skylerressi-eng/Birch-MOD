@@ -1,21 +1,66 @@
 plugins {
     // Minecraft 26.1+ is unobfuscated, so this is the new non-remapping Loom.
-    id 'net.fabricmc.fabric-loom' version '1.15-SNAPSHOT'
+    // The Loom version is tied to the game version — see gradle.properties.
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
     id 'java'
 }
 
 // ---------------------------------------------------------------------------
-// Birch Optimizer — a Hypixel Skyblock QOL mod for Minecraft 26.1.2 (Fabric).
+// Birch Optimizer — a Hypixel Skyblock QOL mod for Fabric.
+//
+// One source tree, two target versions. Everything in src/main is shared;
+// the few things Minecraft renamed between 26.1 and 26.2 live in a per-version
+// source set and are selected here from `minecraft_version`.
 //
 // NOTE: Minecraft 26.1+ requires Java 25 as the minimum Gradle JVM.
 // ---------------------------------------------------------------------------
 
-version = project.mod_version
+// The jar is named for both: the mod's own version, then the game it targets.
+//
+// The two lines used to carry different mod versions — 1.x for 26.1, 2.x for
+// 26.2 — which said the same source was two different mods, and meant the
+// number had to be remembered and bumped by hand on each switch. One version,
+// two targets, and the filename says which: birchoptimizer-2.2.0+26.2.jar.
+// This is Fabric's own convention and Fabric reads the suffix as semver build
+// metadata rather than as part of the version.
+version = "${project.mod_version}+${project.minecraft_version}"
 group = project.maven_group
 
 base {
     archivesName = project.archives_base_name
 }
+
+// ---------------------------------------------------------------------------
+// Version-specific source
+//
+// Minecraft moved the screen accessor, the overlay message, the chat line and
+// the HUD's hidden flag between 26.1 and 26.2, and rewrote how geometry is
+// handed to the renderer. That came to nine mechanical edits plus three
+// renderers, and this mod was moved between the versions three times by making
+// those edits by hand — which is three chances to miss one, on the version you
+// are not testing, and which left the two lines of source quietly diverging so
+// that a fix made on one was absent from the other.
+//
+// So they are two directories now, with the same class names in each, and
+// exactly one is compiled:
+//
+//   src/mc26_1/java   compat/ClientGui + render/*   against 26.1 names
+//   src/mc26_2/java   the same classes              against 26.2 names
+//
+// Nothing else in the mod knows which version it is being built for.
+// ---------------------------------------------------------------------------
+def compatSourceSet = project.minecraft_version.startsWith('26.1') ? 'mc26_1' : 'mc26_2'
+
+sourceSets {
+    main {
+        java {
+            srcDir "src/${compatSourceSet}/java"
+        }
+    }
+}
+
+logger.lifecycle("Birch Optimizer ${project.version} → Minecraft " +
+        "${project.minecraft_version} (compat: ${compatSourceSet}, Loom ${project.loom_version})")
 
 repositories {
     mavenCentral()

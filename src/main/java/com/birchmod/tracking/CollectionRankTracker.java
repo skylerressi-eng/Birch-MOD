@@ -1,5 +1,6 @@
 package com.birchmod.tracking;
 
+import com.birchmod.compat.ClientGui;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -65,7 +66,7 @@ public class CollectionRankTracker {
             return;
         }
 
-        Screen screen = client.screen;
+        Screen screen = ClientGui.screen(client);
         if (screen != lastScreen) {
             // New screen: allow a fresh capture.
             lastScreen = screen;
